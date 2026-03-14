@@ -142,8 +142,10 @@ async def download_file(
 ):
     """下载文件"""
     try:
+        print(f"[DEBUG] download_file called with path='{path}'")
         buffer = ftp_client.download_file(path)
         filename = os.path.basename(path)
+        print(f"[DEBUG] download_file success, filename='{filename}'")
         
         return StreamingResponse(
             buffer,
@@ -151,6 +153,9 @@ async def download_file(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
     except Exception as e:
+        print(f"[ERROR] download_file failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
 
 @app.delete("/api/files")
