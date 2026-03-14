@@ -38,7 +38,7 @@ def main():
     handler.banner = "Welcome to LAN File Manager FTP Server"
     handler.masquerade_address = ""
     handler.passive_ports = PASSIVE_PORTS
-    handler.abstracted_fs = None
+    # handler.abstracted_fs = None  # 不要设置，使用默认值
     
     # 日志
     handler.log_prefix = '%(username)s@%(remote_ip)s'
