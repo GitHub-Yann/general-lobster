@@ -94,7 +94,9 @@ class FileListResponse(BaseModel):
 async def list_files(path: str = "", username: str = Depends(get_current_user)):
     """列出目录内容"""
     try:
+        print(f"[DEBUG] list_files called with path='{path}'")
         files = ftp_client.list_directory(path)
+        print(f"[DEBUG] list_files returned {len(files)} files")
         return [
             {
                 "name": f.name,
@@ -106,6 +108,9 @@ async def list_files(path: str = "", username: str = Depends(get_current_user)):
             for f in files
         ]
     except Exception as e:
+        print(f"[ERROR] list_files failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"获取文件列表失败: {str(e)}")
 
 @app.post("/api/files/upload")

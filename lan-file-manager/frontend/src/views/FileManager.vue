@@ -195,7 +195,9 @@ const loadFiles = async () => {
     const res = await api.get('/files', { params: { path: currentPath.value } })
     files.value = res.data
   } catch (error) {
-    ElMessage.error('加载文件列表失败')
+    console.error('加载文件列表失败:', error)
+    console.error('错误详情:', error.response?.data)
+    ElMessage.error('加载文件列表失败: ' + (error.response?.data?.detail || error.message))
   } finally {
     loading.value = false
   }
