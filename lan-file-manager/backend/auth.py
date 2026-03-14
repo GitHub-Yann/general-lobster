@@ -8,21 +8,28 @@ from config import get_settings
 settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# 模拟用户数据库（生产环境应使用真实数据库）
-USERS_DB = {
-    "admin": {
-        "username": "admin",
-        "hashed_password": pwd_context.hash("admin123"),
-        "disabled": False,
-    }
-}
+
+def safe_hash_password(password: str) -> str:
+    """bcrypt 最大支持 72 字节，需要截断"""
+    return pwd_context.hash(password.encode('utf-8')[:72])
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    # 验证时也截断
+    return pwd_context.verify(plain_password.encode('utf-8')[:72], hashed_password)
 
 def get_user(username: str):
-    if username in USERS_DB:
-        return USERS_DB[username]
+    # 延迟初始化 USERS_DB，避免模块导入时哈希
+    if not hasattr(get_user, "_users_db"):
+        get_user._users_db = {
+            "admin": {
+                "username": "admin",
+                "hashed_password": safe_hash_password("admin123"),
+                "disabled": False,
+            }
+        }
+    if username in get_user._users_db:
+        return get_user._users_db[username]
     return None
 
 def authenticate_user(username: str, password: str):
