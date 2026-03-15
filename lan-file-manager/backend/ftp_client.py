@@ -119,6 +119,8 @@ class FTPClient:
         safe_path = self._safe_path(remote_path)
         
         with self._connect() as ftp:
+            # 切换到二进制模式（Windows FTP 服务器需要）
+            ftp.voidcmd('TYPE I')
             # 获取文件大小
             size = ftp.size(safe_path)
             
