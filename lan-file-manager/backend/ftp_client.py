@@ -298,9 +298,14 @@ class FTPClient:
                     stack.append((full_path, dir_name, True))
                     
                     # 子目录入栈（按相反顺序，保证正序处理）
-                    # 子目录的 dir_name 就是目录名（不是完整路径）
+                    # 子目录的 dir_name 是相对路径（从当前目录到子目录）
                     for subdir in reversed(subdirs):
-                        stack.append((subdir["full_path"], subdir["name"], False))
+                        # 计算相对路径：从当前目录到子目录
+                        if full_path:
+                            relative_dir_name = subdir["full_path"][len(full_path)+1:]  # +1 是为了去掉 '/'
+                        else:
+                            relative_dir_name = subdir["full_path"]
+                        stack.append((subdir["full_path"], relative_dir_name, False))
                     
                     # 文件直接添加到结果
                     for f in files:
