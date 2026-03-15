@@ -229,6 +229,9 @@ class FTPClient:
         all_files = []
         
         with self._connect() as ftp:
+            # 先回到根目录，确保路径计算正确
+            ftp.cwd("/")
+            
             # 使用栈来实现深度优先遍历
             # 栈中存储 (完整路径, 目录名, 是否已处理)
             # 完整路径: 用于返回给调用方
