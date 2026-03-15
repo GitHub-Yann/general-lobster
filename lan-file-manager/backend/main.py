@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, WebSocket, WebSocketDisconnect, Query, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -116,7 +116,7 @@ async def list_files(path: str = "", username: str = Depends(get_current_user)):
 @app.post("/api/files/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    path: str = "",
+    path: str = Form(default=""),
     username: str = Depends(get_current_user)
 ):
     """上传文件"""
