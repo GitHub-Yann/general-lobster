@@ -207,6 +207,8 @@ async def rename_file(
 
 # ============ 文件夹下载接口 ============
 
+import tempfile
+
 @app.get("/api/files/download-folder")
 async def download_folder(
     path: str,
@@ -223,16 +225,16 @@ async def download_folder(
         # 对文件名进行编码
         encoded_filename = quote(zip_filename, safe='')
         
-        async def generate_zip_stream():
-            """流式生成 ZIP 文件"""
-            # 使用内存缓冲区
-            buffer = io.BytesIO()
+        # 创建临时文件存储 ZIP
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
+            tmp_path = tmp_file.name
             
-            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-                # 遍历目录获取所有文件
-                files = ftp_client.walk_directory(path)
-                print(f"[DEBUG] Found {len(files)} files in folder")
-                
+            # 遍历目录获取所有文件
+            files = ftp_client.walk_directory(path)
+            print(f"[DEBUG] Found {len(files)} files in folder")
+            
+            # 创建 ZIP 文件
+            with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                 for file_info in files:
                     try:
                         # 从 FTP 下载文件
@@ -243,31 +245,28 @@ async def download_folder(
                         
                         # 写入 ZIP
                         zf.writestr(relative_path, file_buffer.getvalue())
-                        
-                        # 刷新缓冲区并生成数据
-                        buffer.seek(0)
-                        data = buffer.read()
-                        if data:
-                            yield data
-                        
-                        # 重置缓冲区
-                        buffer.seek(0)
-                        buffer.truncate()
+                        print(f"[DEBUG] Added to ZIP: {relative_path}")
                         
                     except Exception as e:
                         print(f"[ERROR] Failed to add file {file_info.path}: {e}")
                         continue
             
-            # 发送最后的缓冲区数据
-            buffer.seek(0)
-            remaining = buffer.read()
-            if remaining:
-                yield remaining
-            
             print("[DEBUG] ZIP generation completed")
         
+        # 读取临时文件并流式返回
+        async def file_stream():
+            with open(tmp_path, 'rb') as f:
+                while True:
+                    chunk = f.read(8192)  # 8KB 块
+                    if not chunk:
+                        break
+                    yield chunk
+            # 删除临时文件
+            os.unlink(tmp_path)
+            print("[DEBUG] Temp file cleaned up")
+        
         return StreamingResponse(
-            generate_zip_stream(),
+            file_stream(),
             media_type="application/zip",
             headers={
                 "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
@@ -277,6 +276,9 @@ async def download_folder(
         
     except Exception as e:
         print(f"[ERROR] download_folder failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"下载文件夹失败: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"下载文件夹失败: {str(e)}")
