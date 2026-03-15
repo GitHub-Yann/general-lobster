@@ -229,10 +229,14 @@ class FTPClient:
         all_files = []
         
         with self._connect() as ftp:
-            def _walk(current_path: str):
-                # 切换到当前目录
-                if current_path:
-                    ftp.cwd(current_path)
+            def _walk(current_path: str, ftp_path: str = ""):
+                """
+                current_path: 相对于根目录的完整路径（用于返回给调用方）
+                ftp_path: 相对于当前 FTP 工作目录的路径（用于 FTP 操作）
+                """
+                # 切换到目标目录（如果是子目录，只切换目录名）
+                if ftp_path:
+                    ftp.cwd(ftp_path)
                 
                 # 列出当前目录内容
                 items = []
@@ -249,11 +253,12 @@ class FTPClient:
                         return
                     
                     is_dir = permissions.startswith("d")
+                    # 计算完整路径（相对于根目录）
                     full_path = f"{current_path}/{name}".lstrip("/") if current_path else name
                     
                     if is_dir:
-                        # 递归遍历子目录
-                        _walk(full_path)
+                        # 递归遍历子目录（只传递子目录名作为 ftp_path）
+                        _walk(full_path, name)
                         # 返回上级目录
                         ftp.cwd("..")
                     else:
@@ -270,8 +275,8 @@ class FTPClient:
             
             # 开始遍历
             if safe_path:
-                _walk(safe_path)
+                _walk(safe_path, safe_path)
             else:
-                _walk("")
+                _walk("", "")
         
         return all_files
