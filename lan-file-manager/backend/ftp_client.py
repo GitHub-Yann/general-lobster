@@ -228,15 +228,50 @@ class FTPClient:
         safe_path = self._safe_path(path)
         all_files = []
         
-        def _walk(current_path: str):
-            items = self.list_directory(current_path)
-            for item in items:
-                if item.is_dir:
-                    # 递归遍历子目录
-                    _walk(item.path)
-                else:
-                    # 添加文件到列表
-                    all_files.append(item)
+        with self._connect() as ftp:
+            def _walk(current_path: str):
+                # 切换到当前目录
+                if current_path:
+                    ftp.cwd(current_path)
+                
+                # 列出当前目录内容
+                items = []
+                def parse_line(line: str):
+                    parts = line.split()
+                    if len(parts) < 9:
+                        return
+                    
+                    permissions = parts[0]
+                    size = int(parts[4]) if parts[4].isdigit() else 0
+                    name = " ".join(parts[8:])
+                    
+                    if name in (".", ".."):
+                        return
+                    
+                    is_dir = permissions.startswith("d")
+                    full_path = f"{current_path}/{name}".lstrip("/") if current_path else name
+                    
+                    if is_dir:
+                        # 递归遍历子目录
+                        _walk(full_path)
+                        # 返回上级目录
+                        ftp.cwd("..")
+                    else:
+                        # 添加文件到列表
+                        all_files.append(FileInfo(
+                            name=name,
+                            path=full_path,
+                            size=size,
+                            is_dir=False,
+                            permissions=permissions
+                        ))
+                
+                ftp.retrlines("LIST", parse_line)
+            
+            # 开始遍历
+            if safe_path:
+                _walk(safe_path)
+            else:
+                _walk("")
         
-        _walk(safe_path)
         return all_files
