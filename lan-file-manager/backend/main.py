@@ -8,6 +8,7 @@ import os
 import io
 import asyncio
 import json
+import zipfile
 from datetime import timedelta
 from urllib.parse import quote
 
@@ -202,6 +203,83 @@ async def rename_file(
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"重命名失败: {str(e)}")
+
+
+# ============ 文件夹下载接口 ============
+
+@app.get("/api/files/download-folder")
+async def download_folder(
+    path: str,
+    username: str = Depends(get_current_user)
+):
+    """下载文件夹（打包为 ZIP 流式返回）"""
+    try:
+        print(f"[DEBUG] download_folder called with path='{path}'")
+        
+        # 获取文件夹名称
+        folder_name = os.path.basename(path) or "download"
+        zip_filename = f"{folder_name}.zip"
+        
+        # 对文件名进行编码
+        encoded_filename = quote(zip_filename, safe='')
+        
+        async def generate_zip_stream():
+            """流式生成 ZIP 文件"""
+            # 使用内存缓冲区
+            buffer = io.BytesIO()
+            
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                # 遍历目录获取所有文件
+                files = ftp_client.walk_directory(path)
+                print(f"[DEBUG] Found {len(files)} files in folder")
+                
+                for file_info in files:
+                    try:
+                        # 从 FTP 下载文件
+                        file_buffer = ftp_client.download_file(file_info.path)
+                        
+                        # 计算在 ZIP 中的相对路径
+                        relative_path = file_info.path[len(path):].lstrip('/')
+                        
+                        # 写入 ZIP
+                        zf.writestr(relative_path, file_buffer.getvalue())
+                        
+                        # 刷新缓冲区并生成数据
+                        buffer.seek(0)
+                        data = buffer.read()
+                        if data:
+                            yield data
+                        
+                        # 重置缓冲区
+                        buffer.seek(0)
+                        buffer.truncate()
+                        
+                    except Exception as e:
+                        print(f"[ERROR] Failed to add file {file_info.path}: {e}")
+                        continue
+            
+            # 发送最后的缓冲区数据
+            buffer.seek(0)
+            remaining = buffer.read()
+            if remaining:
+                yield remaining
+            
+            print("[DEBUG] ZIP generation completed")
+        
+        return StreamingResponse(
+            generate_zip_stream(),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                "Content-Type": "application/zip"
+            }
+        )
+        
+    except Exception as e:
+        print(f"[ERROR] download_folder failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"下载文件夹失败: {str(e)}")
 
 # ============ WebSocket 接口（实时进度） ============
 

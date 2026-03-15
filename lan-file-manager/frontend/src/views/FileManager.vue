@@ -73,6 +73,15 @@
               <el-icon><Download /></el-icon>
             </el-button>
             <el-button
+              v-if="row.is_dir"
+              size="small"
+              type="primary"
+              @click.stop="downloadFolder(row)"
+              title="下载文件夹"
+            >
+              <el-icon><Download /></el-icon>
+            </el-button>
+            <el-button
               size="small"
               @click.stop="renameFile(row)"
             >
@@ -298,6 +307,31 @@ const downloadFile = async (row) => {
     window.URL.revokeObjectURL(url)
   } catch (error) {
     ElMessage.error('下载失败')
+  }
+}
+
+const downloadFolder = async (row) => {
+  try {
+    ElMessage.info('正在打包文件夹，请稍候...')
+    
+    const res = await api.get('/files/download-folder', {
+      params: { path: row.path },
+      responseType: 'blob'
+    })
+    
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `${row.name}.zip`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    
+    ElMessage.success('文件夹下载完成')
+  } catch (error) {
+    console.error('下载文件夹失败:', error)
+    ElMessage.error('下载文件夹失败: ' + (error.response?.data?.detail || '未知错误'))
   }
 }
 

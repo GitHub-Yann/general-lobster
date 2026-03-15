@@ -222,3 +222,21 @@ class FTPClient:
         
         with self._connect() as ftp:
             return ftp.size(safe_path)
+    
+    def walk_directory(self, path: str = "") -> List[FileInfo]:
+        """递归遍历目录，返回所有文件（不包括目录）"""
+        safe_path = self._safe_path(path)
+        all_files = []
+        
+        def _walk(current_path: str):
+            items = self.list_directory(current_path)
+            for item in items:
+                if item.is_dir:
+                    # 递归遍历子目录
+                    _walk(item.path)
+                else:
+                    # 添加文件到列表
+                    all_files.append(item)
+        
+        _walk(safe_path)
+        return all_files
