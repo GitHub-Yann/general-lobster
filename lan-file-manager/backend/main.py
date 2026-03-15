@@ -9,6 +9,7 @@ import io
 import asyncio
 import json
 from datetime import timedelta
+from urllib.parse import quote
 
 from config import get_settings
 from auth import authenticate_user, create_access_token, verify_token
@@ -147,10 +148,13 @@ async def download_file(
         filename = os.path.basename(path)
         print(f"[DEBUG] download_file success, filename='{filename}'")
         
+        # 对中文文件名进行 RFC 5987 编码
+        encoded_filename = quote(filename, safe='')
+        
         return StreamingResponse(
             buffer,
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
         )
     except Exception as e:
         print(f"[ERROR] download_file failed: {str(e)}")
