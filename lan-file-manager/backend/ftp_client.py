@@ -228,55 +228,73 @@ class FTPClient:
         safe_path = self._safe_path(path)
         all_files = []
         
-        with self._connect() as ftp:
-            def _walk(current_path: str, ftp_path: str = ""):
-                """
-                current_path: 相对于根目录的完整路径（用于返回给调用方）
-                ftp_path: 相对于当前 FTP 工作目录的路径（用于 FTP 操作）
-                """
-                # 切换到目标目录（如果是子目录，只切换目录名）
-                if ftp_path:
-                    ftp.cwd(ftp_path)
-                
-                # 列出当前目录内容
-                items = []
-                def parse_line(line: str):
-                    parts = line.split()
-                    if len(parts) < 9:
-                        return
-                    
-                    permissions = parts[0]
-                    size = int(parts[4]) if parts[4].isdigit() else 0
-                    name = " ".join(parts[8:])
-                    
-                    if name in (".", ".."):
-                        return
-                    
-                    is_dir = permissions.startswith("d")
-                    # 计算完整路径（相对于根目录）
-                    full_path = f"{current_path}/{name}".lstrip("/") if current_path else name
-                    
-                    if is_dir:
-                        # 递归遍历子目录（只传递子目录名作为 ftp_path）
-                        _walk(full_path, name)
-                        # 返回上级目录
-                        ftp.cwd("..")
-                    else:
-                        # 添加文件到列表
-                        all_files.append(FileInfo(
-                            name=name,
-                            path=full_path,
-                            size=size,
-                            is_dir=False,
-                            permissions=permissions
-                        ))
-                
-                ftp.retrlines("LIST", parse_line)
+        def _list_dir(ftp: ftplib.FTP, dir_path: str) -> List[FileInfo]:
+            """列出指定目录的内容"""
+            files = []
             
-            # 开始遍历
-            if safe_path:
-                _walk(safe_path, safe_path)
-            else:
-                _walk("", "")
+            def parse_line(line: str):
+                parts = line.split()
+                if len(parts) < 9:
+                    return
+                
+                permissions = parts[0]
+                size = int(parts[4]) if parts[4].isdigit() else 0
+                name = " ".join(parts[8:])
+                
+                if name in (".", ".."):
+                    return
+                
+                is_dir = permissions.startswith("d")
+                full_path = f"{dir_path}/{name}".lstrip("/") if dir_path else name
+                
+                files.append(FileInfo(
+                    name=name,
+                    path=full_path,
+                    size=size,
+                    is_dir=is_dir,
+                    permissions=permissions
+                ))
+            
+            ftp.retrlines("LIST", parse_line)
+            return files
+        
+        with self._connect() as ftp:
+            # 使用栈来实现深度优先遍历
+            # 栈中存储 (目录路径, 是否已处理)
+            stack = [(safe_path, False)]
+            
+            while stack:
+                current_path, processed = stack.pop()
+                
+                if not processed:
+                    # 第一次访问该目录，先列出内容
+                    # 切换到目标目录
+                    if current_path:
+                        ftp.cwd(current_path)
+                    
+                    items = _list_dir(ftp, current_path)
+                    
+                    # 将子目录和文件分类
+                    subdirs = []
+                    files = []
+                    for item in items:
+                        if item.is_dir:
+                            subdirs.append(item)
+                        else:
+                            files.append(item)
+                    
+                    # 先把当前目录标记为已处理，重新入栈
+                    stack.append((current_path, True))
+                    
+                    # 子目录入栈（按相反顺序，保证正序处理）
+                    for subdir in reversed(subdirs):
+                        stack.append((subdir.path, False))
+                    
+                    # 文件直接添加到结果
+                    all_files.extend(files)
+                else:
+                    # 目录已处理完，返回上级
+                    if current_path:
+                        ftp.cwd("..")
         
         return all_files
