@@ -170,7 +170,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import api from '../api'
+import api, { downloadApi } from '../api'
 
 const router = useRouter()
 
@@ -292,7 +292,7 @@ const createFolder = async () => {
 
 const downloadFile = async (row) => {
   try {
-    const res = await api.get('/files/download', {
+    const res = await downloadApi.get('/files/download', {
       params: { path: row.path },
       responseType: 'blob'
     })
@@ -314,7 +314,7 @@ const downloadFolder = async (row) => {
   try {
     ElMessage.info('正在打包文件夹，请稍候...')
     
-    const res = await api.get('/files/download-folder', {
+    const res = await downloadApi.get('/files/download-folder', {
       params: { path: row.path },
       responseType: 'blob'
     })
