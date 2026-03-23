@@ -25,4 +25,4 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", "52428800"))
 CELERY_WORKERS = int(os.getenv("CELERY_WORKERS", "4"))
-RELOAD = os.getenv("RELOAD", "true").lower() == "true")
+RELOAD = os.getenv("RELOAD", "true").lower() == "true"
