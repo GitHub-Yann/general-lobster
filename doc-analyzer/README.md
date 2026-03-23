@@ -61,7 +61,7 @@ redis-server
 **终端 2 - 启动后端 API：**
 ```bash
 cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python start.py
 ```
 
 **终端 3 - 启动 Celery Worker：**
@@ -69,6 +69,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 cd backend
 celery -A celery_worker worker --loglevel=info
 ```
+
+所有配置（端口、Redis地址等）都在 `backend/.env` 文件中修改。
 
 #### 4. 访问系统
 
@@ -241,6 +243,9 @@ REDIS_URL=redis://192.168.1.100:6379/0
 HOST=0.0.0.0
 PORT=8000
 
+# Development Mode
+RELOAD=true
+
 # File Upload Configuration
 MAX_FILE_SIZE=52428800
 
@@ -255,6 +260,7 @@ CELERY_WORKERS=4
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis 连接地址 |
 | `HOST` | `0.0.0.0` | 服务器监听地址 |
 | `PORT` | `8000` | 服务器端口 |
+| `RELOAD` | `true` | 开发模式（代码修改自动重启） |
 | `MAX_FILE_SIZE` | `52428800` | 最大文件大小（字节） |
 | `CELERY_WORKERS` | `4` | Celery Worker 数量 |
 
