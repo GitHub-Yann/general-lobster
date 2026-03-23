@@ -200,6 +200,23 @@ curl "http://localhost:8000/api/tasks/{task_id}/result"
 
 ## 配置说明
 
+### Redis 配置
+
+如果 Redis 不在本机，设置环境变量：
+
+```bash
+# Windows CMD
+set REDIS_URL=redis://192.168.1.100:6379/0
+
+# Windows PowerShell
+$env:REDIS_URL="redis://192.168.1.100:6379/0"
+
+# Linux/Mac
+export REDIS_URL=redis://192.168.1.100:6379/0
+```
+
+默认使用 `redis://localhost:6379/0`
+
 ### 环境变量
 
 ```bash
