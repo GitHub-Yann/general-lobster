@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from app.db.database import init_db
-from app.api import tasks
+from app.api import tasks, llm
 
 
 @asynccontextmanager
