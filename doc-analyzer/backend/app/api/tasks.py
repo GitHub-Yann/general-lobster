@@ -156,6 +156,8 @@ async def create_task(
     
     # 启动异步任务处理
     from app.core.tasks import process_task
+    from app.config import REDIS_URL
+    print(f"[DEBUG] API using REDIS_URL: {REDIS_URL}")
     process_task.delay(task_id)
     
     return {
