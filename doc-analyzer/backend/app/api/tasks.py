@@ -242,26 +242,39 @@ async def retry_task(
             detail="任务不存在"
         )
     
-    # 重置从指定节点开始的状态
-    nodes = db.query(NodeData).filter(
-        NodeData.task_id == task_id,
-        NodeData.node_name == retry_req.from_node
+    # 验证节点是否存在
+    config = db.query(NodeConfig).filter(
+        NodeConfig.config_name == task.config_name
     ).first()
     
-    if not nodes:
+    if not config:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"节点 {retry_req.from_node} 不存在"
+            detail=f"配置不存在: {task.config_name}"
         )
     
-    # 重新启动任务处理
+    import json
+    node_list = json.loads(config.nodes)
+    
+    if retry_req.from_node not in node_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"节点 {retry_req.from_node} 不在配置中，可用节点: {', '.join(node_list)}"
+        )
+    
+    # 重置任务状态
+    task.status = "pending"
+    task.current_node = retry_req.from_node
+    db.commit()
+    
+    # 重新启动任务处理，从指定节点开始
     from app.core.tasks import process_task
-    process_task.delay(task_id)
+    process_task.delay(task_id, start_from_node=retry_req.from_node)
     
     return {
         "task_id": task_id,
         "from_node": retry_req.from_node,
-        "message": "任务重试已启动"
+        "message": f"任务重试已启动，从节点 [{retry_req.from_node}] 开始"
     }
 
 

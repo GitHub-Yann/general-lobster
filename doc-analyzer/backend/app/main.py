@@ -39,6 +39,7 @@ app.add_middleware(
 
 # 注册 API 路由
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(llm.router, prefix="/api/llm", tags=["llm"])
 
 # 静态文件服务（前端）
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
