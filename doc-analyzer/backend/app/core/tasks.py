@@ -3,10 +3,42 @@ Celery 异步任务定义
 优化版本：支持更细粒度的节点重试和错误处理
 """
 import json
+import os
 import traceback
 from datetime import datetime
-from celery import shared_task
+from celery import Celery
 from celery.exceptions import MaxRetriesExceededError
+
+# 从 .env 加载配置
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key, value)
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+# 创建 Celery 实例
+celery_app = Celery(
+    "doc_analyzer",
+    broker=REDIS_URL,
+    backend=REDIS_URL
+)
+
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="Asia/Shanghai",
+    enable_utc=True,
+    task_track_started=True,
+    task_time_limit=3600,
+    worker_prefetch_multiplier=1,
+)
 
 from app.db.database import SessionLocal
 from app.models.task import Task
@@ -29,7 +61,7 @@ class NodeExecutionError(Exception):
         super().__init__(f"节点 [{node_name}] 执行失败: {message}")
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
 def process_task(self, task_id: str, start_from_node: str = None):
     """
     处理文档分析任务的主流程

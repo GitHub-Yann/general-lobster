@@ -155,9 +155,8 @@ async def create_task(
     db.refresh(task)
     
     # 启动异步任务处理
-    from app.core.tasks import process_task
-    from app.config import REDIS_URL
-    print(f"[DEBUG] API using REDIS_URL: {REDIS_URL}")
+    from app.core.tasks import celery_app, process_task
+    print(f"[DEBUG] Celery broker: {celery_app.conf.broker_url}")
     process_task.delay(task_id)
     
     return {
