@@ -223,6 +223,7 @@ async def get_task(task_id: str, db: Session = Depends(get_db)):
     
     result = task.to_dict()
     result["nodes"] = node_statuses
+    result["message"] = "获取任务详情成功"
     
     return result
 

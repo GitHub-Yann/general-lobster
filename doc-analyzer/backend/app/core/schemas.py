@@ -15,7 +15,7 @@ class TaskResponse(BaseModel):
     """任务响应"""
     task_id: str
     status: str
-    message: str
+    message: Optional[str] = None
     filename: Optional[str] = None
     file_type: Optional[str] = None
     current_node: Optional[str] = None
