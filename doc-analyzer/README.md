@@ -81,9 +81,9 @@ http://localhost:8000/app    # Web 界面
 
 ### 前端说明
 
-前端使用 Vue3 + Element Plus（CDN 版本），是单文件 `frontend/index.html`，不需要 Node.js 构建。
+前端使用 Vue3 + Element Plus（CDN 版本），是单文件 `backend/static/index.html`，不需要 Node.js 构建。
 
-FastAPI 会自动将 `frontend/` 目录挂载到 `/app` 路径。
+FastAPI 会自动将 `backend/static/` 目录挂载到 `/app` 路径。
 
 ## 项目结构
 
@@ -114,10 +114,12 @@ doc-analyzer/
 │   │   ├── db/                # 数据库
 │   │   │   └── database.py    # SQLite 配置
 │   │   └── main.py            # FastAPI 入口
+│   ├── static/                # 前端静态页面
+│   │   └── index.html         # Vue3 + Element Plus 单页应用
 │   ├── celery_worker.py       # Celery worker
-│   └── requirements.txt       # Python 依赖
-├── frontend/                   # 前端代码（静态 HTML，无需构建）
-│   └── index.html             # Vue3 + Element Plus 单页应用
+│   ├── start.py               # 启动脚本
+│   ├── requirements.txt       # Python 依赖
+│   └── .env.example           # 配置示例
 ├── uploads/                    # 上传文件存储
 ├── data/                       # SQLite 数据库
 └── README.md                   # 本文件
