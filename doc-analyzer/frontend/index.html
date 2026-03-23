@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doc Analyzer - 文档智能分析</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 30px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .upload-card {
+            margin-bottom: 30px;
+        }
+        .upload-area {
+            border: 2px dashed #dcdfe6;
+            border-radius: 8px;
+            padding: 60px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #409eff;
+            background: #f5f7fa;
+        }
+        .upload-icon {
+            font-size: 48px;
+            color: #c0c4cc;
+            margin-bottom: 16px;
+        }
+        .upload-text {
+            color: #606266;
+            font-size: 14px;
+        }
+        .upload-hint {
+            color: #909399;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        .task-list {
+            margin-top: 30px;
+        }
+        .task-item {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
+        }
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .task-title {
+            font-weight: 600;
+            color: #303133;
+        }
+        .task-status {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .status-pending {
+            background: #e6a23c;
+            color: white;
+        }
+        .status-running {
+            background: #409eff;
+            color: white;
+        }
+        .status-completed {
+            background: #67c23a;
+            color: white;
+        }
+        .status-failed {
+            background: #f56c6c;
+            color: white;
+        }
+        .task-nodes {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 12px 0;
+        }
+        .node-tag {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            background: #f4f4f5;
+            color: #909399;
+        }
+        .node-tag.completed {
+            background: #e1f3d8;
+            color: #67c23a;
+        }
+        .node-tag.running {
+            background: #d9ecff;
+            color: #409eff;
+        }
+        .node-tag.failed {
+            background: #fde2e2;
+            color: #f56c6c;
+        }
+        .task-actions {
+            margin-top: 12px;
+        }
+        .result-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #ebeef5;
+        }
+        .result-title {
+            font-weight: 600;
+            color: #303133;
+            margin-bottom: 12px;
+        }
+        .keywords-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .keyword-tag {
+            background: #ecf5ff;
+            color: #409eff;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .summary-text {
+            background: #f5f7fa;
+            padding: 16px;
+            border-radius: 8px;
+            line-height: 1.8;
+            color: #606266;
+        }
+        .url-input {
+            margin-top: 20px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #909399;
+        }
+        .empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="app-container">
+            <!-- 头部 -->
+            <div class="header">
+                <h1>🦐 Doc Analyzer</h1>
+                <p>智能文档分析系统 - 提取关键词与核心内容</p>
+            </div>
+
+            <!-- 上传区域 -->
+            <el-card class="upload-card">
+                <template #header>
+                    <span>📄 上传文档</span>
+                </template>
+                
+                <!-- 文件上传 -->
+                <el-upload
+                    class="upload-demo"
+                    drag
+                    action="/api/tasks"
+                    :http-request="customUpload"
+                    :on-success="handleUploadSuccess"
+                    :on-error="handleUploadError"
+                    accept=".pdf,.docx,.txt"
+                >
+                    <el-icon class="upload-icon"><upload-filled /></el-icon>
+                    <div class="upload-text">
+                        拖拽文件到此处，或 <em>点击上传</em>
+                    </div>
+                    <div class="upload-hint">
+                        支持 PDF、DOCX、TXT 格式，单个文件最大 50MB
+                    </div>
+                </el-upload>
+
+                <!-- URL 输入 -->
+                <div class="url-input">
+                    <el-input
+                        v-model="urlInput"
+                        placeholder="输入文章链接 URL"
+                        class="input-with-button"
+                    >
+                        <template #append>
+                            <el-button type="primary" @click="submitUrl" :loading="urlLoading">
+                                分析 URL
+                            </el-button>
+                        </template>
+                    </el-input>
+                </div>
+            </el-card>
+
+            <!-- 任务列表 -->
+            <el-card class="task-list">
+                <template #header>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>📋 任务列表</span>
+                        <el-button type="primary" text @click="refreshTasks" :loading="loading">
+                            <el-icon><refresh /></el-icon> 刷新
+                        </el-button>
+                    </div>
+                </template>
+
+                <!-- 空状态 -->
+                <div v-if="tasks.length === 0" class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <p>暂无任务，请先上传文档</p>
+                </div>
+
+                <!-- 任务列表 -->
+                <div v-else>
+                    <div v-for="task in tasks" :key="task.task_id" class="task-item">
+                        <div class="task-header">
+                            <span class="task-title">{{ task.filename }}</span>
+                            <span :class="['task-status', 'status-' + task.status]">
+                                {{ statusText(task.status) }}
+                            </span>
+                        </div>
+                        
+                        <!-- 节点状态 -->
+                        <div class="task-nodes" v-if="task.nodes">
+                            <span 
+                                v-for="node in task.nodes" 
+                                :key="node.name"
+                                :class="['node-tag', node.status]"
+                            >
+                                {{ nodeName(node.name) }}
+                            </span>
+                        </div>
+
+                        <div style="color: #909399; font-size: 12px; margin-top: 8px;">
+                            创建时间: {{ formatTime(task.created_at) }}
+                        </div>
+
+                        <!-- 操作按钮 -->
+                        <div class="task-actions">
+                            <el-button 
+                                v-if="task.status === 'completed'" 
+                                type="primary" 
+                                size="small"
+                                @click="viewResult(task.task_id)"
+                            >
+                                查看结果
+                            </el-button>
+                            <el-button 
+                                v-if="task.status === 'failed'" 
+                                type="warning" 
+                                size="small"
+                                @click="retryTask(task.task_id)"
+                                :loading="retryLoading === task.task_id"
+                            >
+                                重试
+                            </el-button>
+                        </div>
+
+                        <!-- 结果展示 -->
+                        <div v-if="results[task.task_id]" class="result-section">
+                            <div class="result-title">🎯 关键词</div>
+                            <div class="keywords-list">
+                                <span 
+                                    v-for="kw in results[task.task_id].keywords" 
+                                    :key="kw.word"
+                                    class="keyword-tag"
+                                >
+                                    {{ kw.word }} ({{ (kw.weight * 100).toFixed(1) }}%)
+                                </span>
+                            </div>
+                            
+                            <div class="result-title">📝 摘要</div>
+                            <div class="summary-text">
+                                {{ results[task.task_id].summary }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </el-card>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+        const { ElMessage } = ElementPlus;
+
+        // API 基础地址
+        const API_BASE = 'http://localhost:8000';
+
+        createApp({
+            setup() {
+                const tasks = ref([]);
+                const loading = ref(false);
+                const urlInput = ref('');
+                const urlLoading = ref(false);
+                const retryLoading = ref('');
+                const results = ref({});
+
+                // 状态文本映射
+                const statusText = (status) => {
+                    const map = {
+                        'pending': '等待中',
+                        'running': '处理中',
+                        'completed': '已完成',
+                        'failed': '失败'
+                    };
+                    return map[status] || status;
+                };
+
+                // 节点名称映射
+                const nodeName = (name) => {
+                    const map = {
+                        'upload': '上传',
+                        'parse': '解析',
+                        'segment': '分段',
+                        'keyword': '关键词',
+                        'summary': '摘要',
+                        'output': '输出'
+                    };
+                    return map[name] || name;
+                };
+
+                // 格式化时间
+                const formatTime = (timeStr) => {
+                    if (!timeStr) return '';
+                    const date = new Date(timeStr);
+                    return date.toLocaleString('zh-CN');
+                };
+
+                // 获取任务列表
+                const fetchTasks = async () => {
+                    loading.value = true;
+                    try {
+                        const response = await axios.get(`${API_BASE}/api/tasks?limit=20`);
+                        tasks.value = response.data.items;
+                    } catch (error) {
+                        ElMessage.error('获取任务列表失败');
+                        console.error(error);
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                // 刷新任务
+                const refreshTasks = () => {
+                    fetchTasks();
+                };
+
+                // 自定义上传
+                const customUpload = async (options) => {
+                    const formData = new FormData();
+                    formData.append('file', options.file);
+                    
+                    try {
+                        const response = await axios.post(`${API_BASE}/api/tasks`, formData, {
+                            headers: { 'Content-Type': 'multipart/form-data' }
+                        });
+                        options.onSuccess(response.data);
+                    } catch (error) {
+                        options.onError(error);
+                    }
+                };
+
+                // 上传成功
+                const handleUploadSuccess = (response) => {
+                    ElMessage.success('任务创建成功');
+                    fetchTasks();
+                    // 开始轮询任务状态
+                    startPolling(response.task_id);
+                };
+
+                // 上传失败
+                const handleUploadError = (error) => {
+                    ElMessage.error('上传失败: ' + (error.message || '未知错误'));
+                };
+
+                // 提交 URL
+                const submitUrl = async () => {
+                    if (!urlInput.value.trim()) {
+                        ElMessage.warning('请输入 URL');
+                        return;
+                    }
+                    
+                    urlLoading.value = true;
+                    try {
+                        const formData = new FormData();
+                        formData.append('url', urlInput.value);
+                        
+                        const response = await axios.post(`${API_BASE}/api/tasks/url`, formData);
+                        ElMessage.success('URL 任务创建成功');
+                        urlInput.value = '';
+                        fetchTasks();
+                        startPolling(response.data.task_id);
+                    } catch (error) {
+                        ElMessage.error('创建任务失败: ' + (error.response?.data?.detail || error.message));
+                    } finally {
+                        urlLoading.value = false;
+                    }
+                };
+
+                // 查看结果
+                const viewResult = async (taskId) => {
+                    if (results.value[taskId]) {
+                        // 已加载，切换显示
+                        delete results.value[taskId];
+                        return;
+                    }
+                    
+                    try {
+                        const response = await axios.get(`${API_BASE}/api/tasks/${taskId}/result`);
+                        results.value[taskId] = response.data;
+                    } catch (error) {
+                        ElMessage.error('获取结果失败');
+                    }
+                };
+
+                // 重试任务
+                const retryTask = async (taskId) => {
+                    retryLoading.value = taskId;
+                    try {
+                        await axios.post(`${API_BASE}/api/tasks/${taskId}/retry`, {
+                            from_node: 'upload'
+                        });
+                        ElMessage.success('任务重试已启动');
+                        fetchTasks();
+                        startPolling(taskId);
+                    } catch (error) {
+                        ElMessage.error('重试失败');
+                    } finally {
+                        retryLoading.value = '';
+                    }
+                };
+
+                // 轮询任务状态
+                let pollingIntervals = {};
+                
+                const startPolling = (taskId) => {
+                    if (pollingIntervals[taskId]) return;
+                    
+                    pollingIntervals[taskId] = setInterval(async () => {
+                        try {
+                            const response = await axios.get(`${API_BASE}/api/tasks/${taskId}`);
+                            const task = response.data;
+                            
+                            // 更新任务列表中的状态
+                            const index = tasks.value.findIndex(t => t.task_id === taskId);
+                            if (index !== -1) {
+                                tasks.value[index] = task;
+                            }
+                            
+                            // 如果任务完成或失败，停止轮询
+                            if (task.status === 'completed' || task.status === 'failed') {
+                                clearInterval(pollingIntervals[taskId]);
+                                delete pollingIntervals[taskId];
+                                
+                                if (task.status === 'completed') {
+                                    ElMessage.success('任务处理完成');
+                                }
+                            }
+                        } catch (error) {
+                            console.error('轮询失败', error);
+                        }
+                    }, 2000); // 每2秒轮询一次
+                };
+
+                // 页面加载时获取任务列表
+                onMounted(() => {
+                    fetchTasks();
+                });
+
+                return {
+                    tasks,
+                    loading,
+                    urlInput,
+                    urlLoading,
+                    retryLoading,
+                    results,
+                    statusText,
+                    nodeName,
+                    formatTime,
+                    refreshTasks,
+                    customUpload,
+                    handleUploadSuccess,
+                    handleUploadError,
+                    submitUrl,
+                    viewResult,
+                    retryTask
+                };
+            }
+        }).use(ElementPlus).mount('#app');
+    </script>
+</body>
+</html>

@@ -2,8 +2,10 @@
 doc-analyzer 后端主入口
 FastAPI 应用
 """
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from app.db.database import init_db
@@ -35,8 +37,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由
+# 注册 API 路由
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
+
+# 静态文件服务（前端）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+if os.path.exists(FRONTEND_DIR):
+    app.mount("/app", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 
 @app.get("/")
@@ -44,7 +52,8 @@ async def root():
     return {
         "message": "Doc Analyzer API",
         "version": "1.0.0",
-        "docs": "/docs"
+        "docs": "/docs",
+        "frontend": "/app"
     }
 
 
