@@ -63,6 +63,47 @@ def get_file_type(filename: str) -> str:
     return 'unknown'
 
 
+@router.post("/url", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+async def create_url_task(
+    url: str = Form(...),
+    config_name: Optional[str] = Form("default"),
+    db: Session = Depends(get_db)
+):
+    """
+    创建 URL 分析任务
+    """
+    # 初始化默认配置
+    init_default_configs(db)
+    
+    # 生成任务ID
+    task_id = str(uuid.uuid4())
+    
+    # 创建任务记录（URL 不需要保存文件）
+    task = Task(
+        task_id=task_id,
+        filename=url,
+        file_path=url,  # URL 直接存 file_path
+        file_type="url",
+        config_name=config_name,
+        status="pending",
+        current_node="upload"
+    )
+    
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    
+    # 启动异步任务处理
+    from app.core.tasks import process_task
+    process_task.delay(task_id)
+    
+    return {
+        "task_id": task.task_id,
+        "status": task.status,
+        "message": "URL 任务创建成功，正在处理中"
+    }
+
+
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     file: UploadFile = File(...),
@@ -113,14 +154,14 @@ async def create_task(
     db.commit()
     db.refresh(task)
     
-    # TODO: 启动异步任务处理
-    # from app.core.tasks import process_task
-    # process_task.delay(task_id)
+    # 启动异步任务处理
+    from app.core.tasks import process_task
+    process_task.delay(task_id)
     
     return {
         "task_id": task.task_id,
         "status": task.status,
-        "message": "任务创建成功"
+        "message": "任务创建成功，正在处理中"
     }
 
 
@@ -213,7 +254,9 @@ async def retry_task(
             detail=f"节点 {retry_req.from_node} 不存在"
         )
     
-    # TODO: 重新启动任务处理
+    # 重新启动任务处理
+    from app.core.tasks import process_task
+    process_task.delay(task_id)
     
     return {
         "task_id": task_id,

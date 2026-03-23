@@ -330,16 +330,19 @@ doc-analyzer/
 ## 8. 开发计划
 
 ### Phase 1: 基础框架（Week 1）
-- [ ] 项目初始化，目录结构
-- [ ] FastAPI + SQLite 搭建
-- [ ] 基础 API 接口
-- [ ] Celery 异步任务框架
+- [x] 项目初始化，目录结构
+- [x] FastAPI + SQLite 搭建
+- [x] 基础 API 接口
+- [x] Celery 异步任务框架
 
 ### Phase 2: 节点实现（Week 2）
-- [ ] 文档解析节点（PDF/DOCX/TXT）
-- [ ] 智能分段节点
-- [ ] 关键词提取节点（KeyBERT）
-- [ ] 摘要生成节点
+- [x] 文档解析节点（PDF/DOCX/TXT/URL）
+- [x] 智能分段节点
+- [x] 关键词提取节点（KeyBERT + TF-IDF 备选）
+- [x] 摘要生成节点（TextRank）
+- [x] Celery 任务编排
+- [x] 节点中间数据落库
+- [x] URL 输入支持
 
 ### Phase 3: Web界面（Week 3）
 - [ ] Vue3 项目搭建
