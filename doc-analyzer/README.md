@@ -200,34 +200,55 @@ curl "http://localhost:8000/api/tasks/{task_id}/result"
 
 ## 配置说明
 
-### Redis 配置
+### 配置文件
 
-如果 Redis 不在本机，设置环境变量：
+项目使用 `.env` 文件进行配置，位于 `backend/.env`。
 
+**创建配置文件：**
 ```bash
-# Windows CMD
-set REDIS_URL=redis://192.168.1.100:6379/0
-
-# Windows PowerShell
-$env:REDIS_URL="redis://192.168.1.100:6379/0"
-
-# Linux/Mac
-export REDIS_URL=redis://192.168.1.100:6379/0
+cd backend
+copy .env.example .env    # Windows
+# 或
+cp .env.example .env      # Linux/Mac
 ```
 
-默认使用 `redis://localhost:6379/0`
+**编辑 `backend/.env`：**
+```ini
+# Redis Configuration
+REDIS_URL=redis://192.168.1.100:6379/0
 
-### 环境变量
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
 
-```bash
-# Redis 配置
+# File Upload Configuration
+MAX_FILE_SIZE=52428800
+
+# Celery Configuration
+CELERY_WORKERS=4
+```
+
+### 配置项说明
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis 连接地址 |
+| `HOST` | `0.0.0.0` | 服务器监听地址 |
+| `PORT` | `8000` | 服务器端口 |
+| `MAX_FILE_SIZE` | `52428800` | 最大文件大小（字节） |
+| `CELERY_WORKERS` | `4` | Celery Worker 数量 |
+
+### Redis 配置示例
+
+```ini
+# 本机 Redis
 REDIS_URL=redis://localhost:6379/0
 
-# 文件上传限制
-MAX_FILE_SIZE=52428800  # 50MB
+# 局域网 Redis
+REDIS_URL=redis://192.168.1.100:6379/0
 
-# Celery 配置
-CELERY_WORKERS=4
+# 带密码的 Redis
+REDIS_URL=redis://:mypassword@192.168.1.100:6379/0
 ```
 
 ### 数据库

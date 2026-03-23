@@ -1,11 +1,8 @@
 """
 Celery 配置和 Worker
 """
-import os
 from celery import Celery
-
-# 从环境变量读取 Redis 配置，默认使用 localhost
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from app.config import REDIS_URL
 
 celery_app = Celery(
     "doc_analyzer",
