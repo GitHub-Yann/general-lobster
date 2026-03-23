@@ -42,16 +42,26 @@ cd backend
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-3. **启动 Celery Worker**
+3. **启动 Celery Worker**（新开终端）
 ```bash
 cd backend
 celery -A celery_worker worker --loglevel=info
 ```
 
 4. **访问 Web 界面**
+
+前端是静态 HTML 文件，由 FastAPI 自动托管，无需单独启动：
 ```
-http://localhost:8000/app
+http://localhost:8000/app    # Web 界面
+http://localhost:8000/docs   # API 文档（Swagger）
+http://localhost:8000        # API 根路径
 ```
+
+### 前端说明
+
+前端使用 Vue3 + Element Plus（CDN 版本），是单文件 `frontend/index.html`，不需要 Node.js 构建。
+
+FastAPI 会自动将 `frontend/` 目录挂载到 `/app` 路径。
 
 ## 项目结构
 
@@ -84,7 +94,7 @@ doc-analyzer/
 │   │   └── main.py            # FastAPI 入口
 │   ├── celery_worker.py       # Celery worker
 │   └── requirements.txt       # Python 依赖
-├── frontend/                   # 前端代码
+├── frontend/                   # 前端代码（静态 HTML，无需构建）
 │   └── index.html             # Vue3 + Element Plus 单页应用
 ├── uploads/                    # 上传文件存储
 ├── data/                       # SQLite 数据库
@@ -134,7 +144,7 @@ doc-analyzer/
 
 - **后端**: FastAPI + SQLAlchemy + SQLite
 - **任务队列**: Celery + Redis
-- **前端**: Vue3 + Element Plus (CDN)
+- **前端**: Vue3 + Element Plus (CDN 版本，无需构建)
 - **文档解析**: pdfplumber + python-docx
 - **NLP**: KeyBERT + jieba + scikit-learn
 
