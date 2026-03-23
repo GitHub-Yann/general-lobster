@@ -44,8 +44,15 @@ app.include_router(llm.router, prefix="/api/llm", tags=["llm"])
 # 静态文件服务（前端）
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+print(f"[DEBUG] BASE_DIR: {BASE_DIR}")
+print(f"[DEBUG] FRONTEND_DIR: {FRONTEND_DIR}")
+print(f"[DEBUG] FRONTEND_DIR exists: {os.path.exists(FRONTEND_DIR)}")
 if os.path.exists(FRONTEND_DIR):
+    print(f"[DEBUG] FRONTEND_DIR contents: {os.listdir(FRONTEND_DIR)}")
     app.mount("/app", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+    print("[DEBUG] Static files mounted at /app")
+else:
+    print("[WARNING] Frontend directory not found!")
 
 
 @app.get("/")
