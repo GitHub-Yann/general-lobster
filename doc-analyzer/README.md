@@ -267,13 +267,13 @@ CELERY_WORKERS=4
 ### Redis 配置示例
 
 ```ini
-# 本机 Redis
+# 本机 Redis 无密码
 REDIS_URL=redis://localhost:6379/0
 
-# 局域网 Redis
+# 局域网 Redis 无密码
 REDIS_URL=redis://192.168.1.100:6379/0
 
-# 带密码的 Redis
+# Redis 有密码（注意冒号位置）
 REDIS_URL=redis://:mypassword@192.168.1.100:6379/0
 ```
 
