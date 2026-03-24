@@ -104,10 +104,14 @@ def extract_keywords(text: str, top_n: int = 15, min_length: int = 2,
         # 过滤噪音词（支持部分匹配）
         is_noise = False
         for noise in noise_words_set:
-            if noise in keyword_lower or keyword_lower in noise:
+            # 噪音词在关键词中，或关键词在噪音词中（且噪音词较长）
+            if noise in keyword_lower:
                 is_noise = True
                 break
         if is_noise:
+            continue
+        # 限制关键词长度，避免提取完整句子（最多15个字符）
+        if len(keyword_clean) > 15:
             continue
         if len(keyword_clean) < min_length:
             continue

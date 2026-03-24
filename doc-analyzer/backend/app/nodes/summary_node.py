@@ -87,7 +87,10 @@ def _is_noise_sentence(sentence: str, noise_set: set) -> bool:
     sentence_lower = sentence.lower()
     # 如果句子中噪音词占比过高，认为是噪音句
     noise_count = sum(1 for noise in noise_set if noise in sentence_lower)
-    return noise_count >= 2  # 包含2个及以上噪音词则过滤
+    # 同时检查是否包含URL模式
+    has_url = 'http' in sentence_lower or 'https' in sentence_lower
+    has_path = '/' in sentence and ('api' in sentence_lower or 'svc' in sentence_lower)
+    return noise_count >= 1 or has_url or has_path  # 只要有1个噪音词或包含URL/路径就过滤
 
 
 def _score_sentence_by_domain(sentence: str, domain_keywords: List[str]) -> float:
