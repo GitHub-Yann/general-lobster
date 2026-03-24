@@ -459,6 +459,28 @@ def execute_keyword_node(db, task_id: str, context: dict) -> dict:
 
 def execute_summary_node(db, task_id: str, context: dict) -> dict:
     """摘要生成节点"""
+    # 获取任务信息
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    if not task:
+        raise ValueError("任务不存在")
+
+    # 解析用户自定义配置
+    import json
+    domain_keywords = []
+    noise_words = []
+
+    if task.domain_keywords:
+        try:
+            domain_keywords = json.loads(task.domain_keywords)
+        except json.JSONDecodeError:
+            domain_keywords = [kw.strip() for kw in task.domain_keywords.split(',') if kw.strip()]
+
+    if task.noise_words:
+        try:
+            noise_words = json.loads(task.noise_words)
+        except json.JSONDecodeError:
+            noise_words = [nw.strip() for nw in task.noise_words.split(',') if nw.strip()]
+
     # 获取文本
     parse_output = context.get("parse", {})
     text = parse_output.get("text", "")
@@ -478,7 +500,15 @@ def execute_summary_node(db, task_id: str, context: dict) -> dict:
         max_length = 600
         min_length = 200
 
-    result = generate_summary(text, max_length=max_length, min_length=min_length)
+    logger.info(f"[Task {task_id}] 摘要生成 - 领域词: {domain_keywords}, 噪音词: {noise_words}")
+
+    result = generate_summary(
+        text,
+        max_length=max_length,
+        min_length=min_length,
+        domain_keywords=domain_keywords,
+        noise_words=noise_words
+    )
     return result
 
 

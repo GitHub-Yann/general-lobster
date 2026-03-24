@@ -1,22 +1,26 @@
 """
 摘要生成节点
-使用 TextRank 或 Transformers 生成摘要
+使用 TextRank 或 Transformers 生成摘要，支持领域词和噪音词过滤
 """
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 def generate_summary(text: str, max_length: int = 500, min_length: int = 100,
-                     ratio: float = 0.2) -> Dict[str, Any]:
+                     ratio: float = 0.2,
+                     domain_keywords: Optional[List[str]] = None,
+                     noise_words: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     生成文本摘要
-    
+
     Args:
         text: 输入文本
         max_length: 摘要最大长度（字符数）
         min_length: 摘要最小长度（字符数）
         ratio: 摘要占原文比例
-    
+        domain_keywords: 领域关键词，优先选择包含这些词的句子
+        noise_words: 噪音词，过滤包含这些词的句子
+
     Returns:
         {
             "summary": "生成的摘要",
@@ -34,9 +38,15 @@ def generate_summary(text: str, max_length: int = 500, min_length: int = 100,
             "summary_length": 0,
             "compression_ratio": 0
         }
-    
+
+    # 初始化配置
+    domain_keywords = domain_keywords or []
+    noise_words = noise_words or []
+    default_noise = {'http://', 'https://', 'api/v', '/svc', '.com', '.cn', '.html'}
+    noise_set = set(noise_words) | default_noise
+
     original_length = len(text)
-    
+
     # 如果文本较短，直接返回
     if original_length <= max_length:
         return {
@@ -46,23 +56,23 @@ def generate_summary(text: str, max_length: int = 500, min_length: int = 100,
             "summary_length": original_length,
             "compression_ratio": 1.0
         }
-    
+
     # 尝试使用 TextRank 提取关键句
     try:
-        summary = _textrank_summary(text, ratio)
+        summary = _textrank_summary(text, ratio, domain_keywords, noise_set)
         method = "textrank"
     except Exception:
-        # 备选：基于位置的摘要（取开头、结尾和中间）
-        summary = _position_based_summary(text, max_length)
+        # 备选：基于位置的摘要
+        summary = _position_based_summary(text, max_length, domain_keywords, noise_set)
         method = "position"
-    
+
     # 控制长度
     if len(summary) > max_length:
         summary = summary[:max_length].rsplit('。', 1)[0] + '。'
-    
+
     summary_length = len(summary)
     compression_ratio = round(summary_length / original_length, 4) if original_length > 0 else 0
-    
+
     return {
         "summary": summary,
         "method": method,
@@ -72,9 +82,28 @@ def generate_summary(text: str, max_length: int = 500, min_length: int = 100,
     }
 
 
-def _textrank_summary(text: str, ratio: float = 0.2) -> str:
+def _is_noise_sentence(sentence: str, noise_set: set) -> bool:
+    """判断句子是否包含太多噪音"""
+    sentence_lower = sentence.lower()
+    # 如果句子中噪音词占比过高，认为是噪音句
+    noise_count = sum(1 for noise in noise_set if noise in sentence_lower)
+    return noise_count >= 2  # 包含2个及以上噪音词则过滤
+
+
+def _score_sentence_by_domain(sentence: str, domain_keywords: List[str]) -> float:
+    """根据领域关键词给句子打分"""
+    if not domain_keywords:
+        return 0.0
+    sentence_lower = sentence.lower()
+    score = sum(1 for kw in domain_keywords if kw.lower() in sentence_lower)
+    return score / len(domain_keywords)
+
+
+def _textrank_summary(text: str, ratio: float = 0.2,
+                      domain_keywords: List[str] = None,
+                      noise_set: set = None) -> str:
     """
-    使用 TextRank 算法提取关键句
+    使用 TextRank 算法提取关键句，支持领域词加权和噪音过滤
     """
     try:
         import jieba
@@ -82,70 +111,104 @@ def _textrank_summary(text: str, ratio: float = 0.2) -> str:
         from sklearn.feature_extraction.text import TfidfVectorizer
     except ImportError:
         raise ImportError("请安装 jieba, networkx, scikit-learn")
-    
+
+    domain_keywords = domain_keywords or []
+    noise_set = noise_set or set()
+
     # 分割句子
     sentences = _split_sentences(text)
-    
+
     if len(sentences) <= 3:
         return ' '.join(sentences)
-    
+
+    # 过滤噪音句
+    filtered_sentences = [(i, s) for i, s in enumerate(sentences)
+                          if not _is_noise_sentence(s, noise_set)]
+
+    if not filtered_sentences:
+        # 如果全部过滤了，回退到原始句子
+        filtered_sentences = list(enumerate(sentences))
+
     # 计算句子数量
-    num_sentences = max(1, int(len(sentences) * ratio))
+    num_sentences = max(1, int(len(filtered_sentences) * ratio))
     num_sentences = min(num_sentences, 10)  # 最多10句
-    
+
     # 分词
-    sentence_words = [' '.join(jieba.lcut(s)) for s in sentences]
-    
+    sentence_words = [' '.join(jieba.lcut(s)) for _, s in filtered_sentences]
+
     # 计算 TF-IDF 相似度矩阵
     try:
         vectorizer = TfidfVectorizer()
         tfidf_matrix = vectorizer.fit_transform(sentence_words)
         similarity_matrix = (tfidf_matrix * tfidf_matrix.T).toarray()
     except Exception:
-        # 如果 TF-IDF 失败，使用简单词重叠
         similarity_matrix = _simple_similarity(sentence_words)
-    
+
     # 构建图并计算 TextRank
     nx_graph = nx.from_numpy_array(similarity_matrix)
     scores = nx.pagerank(nx_graph)
-    
+
+    # 结合领域词权重调整得分
+    adjusted_scores = []
+    for idx, (orig_idx, sentence) in enumerate(filtered_sentences):
+        domain_score = _score_sentence_by_domain(sentence, domain_keywords)
+        # TextRank得分 + 领域词加权（最多提升30%）
+        final_score = scores[idx] * (1 + domain_score * 0.3)
+        adjusted_scores.append((final_score, orig_idx, sentence))
+
     # 按得分排序
-    ranked_sentences = sorted(
-        [(scores[i], s) for i, s in enumerate(sentences)],
-        reverse=True
-    )
-    
+    adjusted_scores.sort(reverse=True)
+
     # 选择得分最高的句子，但保持原始顺序
     top_indices = sorted([
-        sentences.index(s) for _, s in ranked_sentences[:num_sentences]
+        orig_idx for _, orig_idx, _ in adjusted_scores[:num_sentences]
     ])
-    
+
     summary_sentences = [sentences[i] for i in top_indices]
-    
+
     return ' '.join(summary_sentences)
 
 
-def _position_based_summary(text: str, max_length: int) -> str:
+def _position_based_summary(text: str, max_length: int,
+                            domain_keywords: List[str] = None,
+                            noise_set: set = None) -> str:
     """
-    基于位置的摘要（开头 + 结尾 + 关键段落）
+    基于位置的摘要（开头 + 结尾 + 关键段落），支持领域词和噪音过滤
     """
+    domain_keywords = domain_keywords or []
+    noise_set = noise_set or set()
+
     sentences = _split_sentences(text)
-    
+
+    # 过滤噪音句
+    sentences = [s for s in sentences if not _is_noise_sentence(s, noise_set)]
+
     if len(sentences) <= 5:
         return ' '.join(sentences)
-    
+
+    # 优先选择包含领域词的句子
+    domain_sentences = [(i, s) for i, s in enumerate(sentences)
+                        if _score_sentence_by_domain(s, domain_keywords) > 0]
+
     # 取前 30%、后 20% 的句子
     start_count = max(1, len(sentences) // 3)
     end_count = max(1, len(sentences) // 5)
-    
-    selected = sentences[:start_count] + sentences[-end_count:]
-    
+
+    selected_indices = set()
+    selected_indices.update(range(start_count))
+    selected_indices.update(range(len(sentences) - end_count, len(sentences)))
+
+    # 加入包含领域词的句子
+    for idx, _ in domain_sentences[:3]:  # 最多加3句
+        selected_indices.add(idx)
+
+    selected = [sentences[i] for i in sorted(selected_indices)]
+
     summary = ' '.join(selected)
-    
-    # 如果还太长，截断
+
     if len(summary) > max_length:
         summary = summary[:max_length].rsplit('。', 1)[0] + '。'
-    
+
     return summary
 
 

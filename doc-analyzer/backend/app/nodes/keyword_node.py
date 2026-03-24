@@ -101,8 +101,13 @@ def extract_keywords(text: str, top_n: int = 15, min_length: int = 2,
         keyword_clean = keyword.strip()
         keyword_lower = keyword_clean.lower()
 
-        # 过滤噪音词
-        if any(noise in keyword_lower for noise in noise_words_set):
+        # 过滤噪音词（支持部分匹配）
+        is_noise = False
+        for noise in noise_words_set:
+            if noise in keyword_lower or keyword_lower in noise:
+                is_noise = True
+                break
+        if is_noise:
             continue
         if len(keyword_clean) < min_length:
             continue
