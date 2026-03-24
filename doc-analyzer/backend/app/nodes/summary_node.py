@@ -57,14 +57,22 @@ def generate_summary(text: str, max_length: int = 500, min_length: int = 100,
             "compression_ratio": 1.0
         }
 
-    # 尝试使用 TextRank 提取关键句
+    # 优先使用结构化摘要（按标题/章节组织，更适合文档介绍类场景）
     try:
-        summary = _textrank_summary(text, ratio, domain_keywords, noise_set)
-        method = "textrank"
+        summary = _structured_summary(text, max_length, min_length, domain_keywords, noise_set)
+        method = "structured"
     except Exception:
-        # 备选：基于位置的摘要
-        summary = _position_based_summary(text, max_length, domain_keywords, noise_set)
-        method = "position"
+        summary = ""
+
+    # 结构化摘要不足时，回退到 TextRank
+    if len(summary.strip()) < max(60, min_length // 2):
+        try:
+            summary = _textrank_summary(text, ratio, domain_keywords, noise_set)
+            method = "textrank"
+        except Exception:
+            # 备选：基于位置的摘要
+            summary = _position_based_summary(text, max_length, domain_keywords, noise_set)
+            method = "position"
 
     # 控制长度
     if len(summary) > max_length:
@@ -90,8 +98,9 @@ def _is_noise_sentence(sentence: str, noise_set: set) -> bool:
     # 同时检查是否包含URL模式
     has_url = 'http' in sentence_lower or 'https' in sentence_lower
     has_path = '/' in sentence and ('api' in sentence_lower or 'svc' in sentence_lower)
+    is_checklist = _is_checklist_sentence(sentence)
     # 过滤策略不要过激：避免因为命中单个噪音词误删有效句
-    return has_url or has_path or noise_count >= 2
+    return has_url or has_path or noise_count >= 2 or is_checklist
 
 
 def _score_sentence_by_domain(sentence: str, domain_keywords: List[str]) -> float:
@@ -173,6 +182,59 @@ def _textrank_summary(text: str, ratio: float = 0.2,
     return ' '.join(summary_sentences)
 
 
+def _structured_summary(text: str, max_length: int, min_length: int,
+                        domain_keywords: List[str] = None,
+                        noise_set: set = None) -> str:
+    """
+    结构化摘要：基于标题和章节首要点构建“文档简介”风格摘要。
+    """
+    domain_keywords = domain_keywords or []
+    noise_set = noise_set or set()
+
+    lines = [line.strip() for line in text.splitlines() if line and line.strip()]
+    if not lines:
+        return ""
+
+    title = lines[0]
+    sections = _extract_sections(lines)
+    if not sections:
+        # 没有明确章节时回退为空，由上层继续回退 TextRank
+        return ""
+
+    heading_names = []
+    point_sentences = []
+
+    for heading, body in sections[:4]:
+        normalized_heading = re.sub(r'^[一二三四五六七八九十]+、\s*', '', heading)
+        if normalized_heading:
+            heading_names.append(normalized_heading)
+
+        candidate = _pick_representative_sentence(body, domain_keywords, noise_set)
+        if candidate:
+            point_sentences.append(candidate)
+
+    # 生成导语
+    intro_subject = '、'.join(heading_names[:3]) if heading_names else _normalize_title(title)
+    intro = f"该文档围绕{intro_subject}进行说明，"
+    intro += "重点概述核心内容、执行流程与关键注意事项。"
+
+    parts = [intro]
+    parts.extend(point_sentences[:3])
+    summary = ' '.join(parts)
+
+    # 控制长度
+    if len(summary) > max_length:
+        summary = summary[:max_length].rsplit('。', 1)[0] + '。'
+
+    # 过短时补充一条章节概览
+    if len(summary) < min_length and len(heading_names) > 1:
+        extra = f"同时覆盖{ '、'.join(heading_names[1:4]) }等内容。"
+        if len(summary) + len(extra) <= max_length:
+            summary += extra
+
+    return summary
+
+
 def _position_based_summary(text: str, max_length: int,
                             domain_keywords: List[str] = None,
                             noise_set: set = None) -> str:
@@ -219,7 +281,7 @@ def _position_based_summary(text: str, max_length: int,
 def _split_sentences(text: str) -> List[str]:
     """分割句子"""
     # 中文句子分隔符
-    delimiters = r'[。！？\n]+'
+    delimiters = r'[。！？；;\n]+'
     sentences = re.split(delimiters, text)
     
     # 清理并过滤
@@ -235,6 +297,110 @@ def _split_sentences(text: str) -> List[str]:
             result.append(s)
     
     return result
+
+
+def _extract_sections(lines: List[str]) -> List[tuple]:
+    """提取章节（标题 + 内容）。"""
+    heading_pattern = re.compile(
+        r'^([一二三四五六七八九十]+、|\d+(?:\.\d+)*[\.、]?\s+|[IVXivx]+[\.、]\s+)'
+    )
+    sections = []
+    current_heading = None
+    current_lines = []
+
+    for line in lines:
+        if heading_pattern.match(line):
+            if current_heading and current_lines:
+                sections.append((current_heading, current_lines))
+            current_heading = line
+            current_lines = []
+        else:
+            if current_heading:
+                current_lines.append(line)
+
+    if current_heading and current_lines:
+        sections.append((current_heading, current_lines))
+
+    return sections
+
+
+def _pick_representative_sentence(lines: List[str], domain_keywords: List[str], noise_set: set) -> str:
+    """从章节内容中挑一条代表句，用于构建简介。"""
+    text = ' '.join(lines)
+    candidates = _split_sentences(text)
+    if not candidates:
+        return ""
+
+    scored = []
+    for s in candidates:
+        s = re.sub(r'^[（(]?[a-zA-Z0-9一二三四五六七八九十]+[)）\.、]\s*', '', s).strip()
+        s = re.sub(r'^\d+(?:\.\d+)*\s*', '', s).strip()
+        if len(s) < 16 or len(s) > 100:
+            continue
+        if _is_noise_sentence(s, noise_set):
+            continue
+        # 避免把章节细节编号句（如 1.1 / 2.3）当作摘要主句
+        if re.search(r'\d+\.\d+', s):
+            continue
+        score = _score_sentence_by_domain(s, domain_keywords)
+        # 偏好“说明/流程/配置/规范/路由”等介绍型句子
+        if any(token in s for token in ['流程', '说明', '机制', '配置', '规范', '路由', '转发', '部署', '权限']):
+            score += 0.2
+        scored.append((score, s))
+
+    if not scored:
+        return ""
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    sentence = _shrink_clause(scored[0][1])
+    if not sentence.endswith('。'):
+        sentence += '。'
+    return sentence
+
+
+def _is_checklist_sentence(sentence: str) -> bool:
+    """过滤问答清单、样例清单、表单项等结构化噪音句。"""
+    s = sentence.strip().lower()
+    patterns = [
+        r'^[（(]?[a-z0-9]+[)）]',   # (a) / (1)
+        r'^情况[0-9一二三四五六七八九十]',
+        r'^答案[0-9一二三四五六七八九十]',
+        r'^[（(]?[ivx]+[)）]',      # (i) / (iv)
+        r'^\d+[\.\)、]\s*',         # 1. / 1) / 1、
+    ]
+    if any(re.search(p, s) for p in patterns):
+        return True
+    if '可忽略' in s or '⚠' in s:
+        return True
+    if re.search(r'（[a-z]）', s):
+        return True
+    # 通用清单特征：示例/表单式语言 + 多冒号/分号
+    checklist_tokens = ['例如', '示例', '请提供', '备注', '填写', '选项', '格式如下', '如下']
+    token_hits = sum(1 for token in checklist_tokens if token in s)
+    punctuation_hits = s.count('：') + s.count(':') + s.count('；') + s.count(';')
+    return token_hits >= 2 or (token_hits >= 1 and punctuation_hits >= 2)
+
+
+def _shrink_clause(sentence: str) -> str:
+    """对过长句进行温和裁剪，保留前半句核心信息。"""
+    s = sentence.strip()
+    if len(s) <= 56:
+        return s
+    for sep in ['，', ',', '；', ';']:
+        idx = s.find(sep)
+        if 18 <= idx <= 56:
+            return s[:idx]
+    return s
+
+
+def _normalize_title(title: str) -> str:
+    """清理标题前缀，得到更通用的摘要主语。"""
+    t = (title or '').strip()
+    if not t:
+        return "文档主题"
+    t = re.sub(r'^[一二三四五六七八九十]+、\s*', '', t)
+    t = re.sub(r'^\d+(?:\.\d+)*\s*', '', t)
+    return t[:24] if len(t) > 24 else t
 
 
 def _simple_similarity(sentence_words: List[str]) -> List[List[float]]:

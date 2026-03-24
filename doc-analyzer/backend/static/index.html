@@ -69,6 +69,13 @@
             font-size: 12px;
             margin-top: 8px;
         }
+        .upload-demo .el-upload-dragger {
+            min-height: 120px;
+            padding: 20px 16px;
+        }
+        .upload-demo .el-upload {
+            width: 100%;
+        }
         .task-list {
             margin-top: 30px;
         }
@@ -233,10 +240,12 @@
                 
                 <!-- 文件选择 -->
                 <el-upload
+                    ref="uploadRef"
                     class="upload-demo"
                     drag
                     action="#"
                     :auto-upload="false"
+                    :file-list="fileList"
                     :on-change="handleFileChange"
                     :on-remove="handleFileRemove"
                     accept=".pdf,.docx,.txt"
@@ -417,6 +426,8 @@
                 const deleteLoading = ref('');
 
                 // 表单相关
+                const uploadRef = ref(null);
+                const fileList = ref([]);
                 const selectedFile = ref(null);
                 const domainKeywords = ref('');
                 const noiseWords = ref('');
@@ -497,14 +508,16 @@
                 };
 
                 // 文件选择变化
-                const handleFileChange = (file) => {
+                const handleFileChange = (file, uploadFiles) => {
                     selectedFile.value = file.raw;
+                    fileList.value = (uploadFiles || []).slice(-1);
                     console.log('选择文件:', file.name);
                 };
 
                 // 文件移除
-                const handleFileRemove = () => {
+                const handleFileRemove = (file, uploadFiles) => {
                     selectedFile.value = null;
+                    fileList.value = uploadFiles || [];
                 };
 
                 // 提交任务
@@ -540,6 +553,10 @@
                         
                         // 清空表单
                         selectedFile.value = null;
+                        fileList.value = [];
+                        if (uploadRef.value) {
+                            uploadRef.value.clearFiles();
+                        }
                         urlInput.value = '';
                         domainKeywords.value = '';
                         noiseWords.value = '';
@@ -715,6 +732,8 @@
                     deleteLoading,
                     results,
                     // 表单相关
+                    uploadRef,
+                    fileList,
                     selectedFile,
                     domainKeywords,
                     noiseWords,
