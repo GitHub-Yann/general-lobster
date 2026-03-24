@@ -3,6 +3,7 @@
 使用 KeyBERT 进行关键词提取，支持用户自定义领域词和噪音词
 """
 import json
+import re
 from typing import List, Dict, Any
 
 
@@ -39,8 +40,8 @@ def extract_keywords(text: str, top_n: int = 15, min_length: int = 2,
         }
 
     # 初始化默认列表
-    domain_keywords = domain_keywords or []
-    noise_words = noise_words or []
+    domain_keywords = _normalize_terms(domain_keywords or [])
+    noise_words = _normalize_terms(noise_words or [])
     # 添加默认噪音词
     default_noise = {'http', 'https', 'www', 'com', 'cn', 'org', 'net', 'html', 'htm'}
     noise_words_set = set(noise_words) | default_noise
@@ -56,7 +57,8 @@ def extract_keywords(text: str, top_n: int = 15, min_length: int = 2,
     except Exception:
         kw_model = KeyBERT()
 
-    # 文本预处理
+    # 文本预处理：去掉 URL/IP 等强噪音，减少无意义短语
+    text = _clean_text_for_keywords(text)
     max_text_length = 10000
     if len(text) > max_text_length:
         text = text[:max_text_length]
@@ -67,7 +69,7 @@ def extract_keywords(text: str, top_n: int = 15, min_length: int = 2,
             keywords = kw_model.extract_keywords(
                 text,
                 keyphrase_ngram_range=(1, 3),  # 支持1-3个词
-                stop_words='english',
+                stop_words=None,
                 top_n=top_n * 3,  # 多提取一些，后续过滤和加权
                 use_mmr=True,
                 diversity=diversity
@@ -76,7 +78,7 @@ def extract_keywords(text: str, top_n: int = 15, min_length: int = 2,
             keywords = kw_model.extract_keywords(
                 text,
                 keyphrase_ngram_range=(1, 3),
-                stop_words='english',
+                stop_words=None,
                 top_n=top_n * 3
             )
     except Exception as e:
@@ -119,6 +121,9 @@ def extract_keywords(text: str, top_n: int = 15, min_length: int = 2,
             continue
         if keyword_clean.isdigit() or not any(c.isalnum() for c in keyword_clean):
             continue
+        # 过滤模板句式关键词
+        if _is_template_keyword(keyword_clean):
+            continue
 
         # 检查是否是领域关键词的变体
         is_domain = any(domain_kw.lower() in keyword_lower or keyword_lower in domain_kw.lower()
@@ -145,6 +150,41 @@ def extract_keywords(text: str, top_n: int = 15, min_length: int = 2,
         "keywords": result[:top_n],
         "total_keywords": len(result[:top_n])
     }
+
+
+def _normalize_terms(terms: List[str]) -> List[str]:
+    """对用户传入的词表做二次拆分与去重，避免单元素长串漏切分。"""
+    result = []
+    seen = set()
+
+    for term in terms:
+        if term is None:
+            continue
+        for chunk in re.split(r"[,，;；、\n\r\t]+", str(term)):
+            item = chunk.strip().strip("\"'[](){}")
+            if not item:
+                continue
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(item)
+
+    return result
+
+
+def _clean_text_for_keywords(text: str) -> str:
+    """去掉 URL、IP:PORT、多余空白，降低地址模板对关键词的干扰。"""
+    cleaned = re.sub(r"https?://\S+", " ", text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}:\d+\b", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def _is_template_keyword(keyword: str) -> bool:
+    """过滤流程模板类短语，避免整句被当作关键词。"""
+    template_tokens = ['如果', '例如', '情况', '答案', '调用方', '请提供', '是否需要', '比如']
+    return any(token in keyword for token in template_tokens)
 
 
 def _fallback_keyword_extraction(text: str, top_n: int, min_length: int,

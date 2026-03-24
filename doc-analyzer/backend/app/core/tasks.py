@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import traceback
+import re
 from datetime import datetime
 from celery import Celery
 from celery.exceptions import MaxRetriesExceededError
@@ -392,24 +393,9 @@ def execute_keyword_node(db, task_id: str, context: dict) -> dict:
     if not task:
         raise ValueError("任务不存在")
 
-    # 解析用户自定义配置
-    import json
-    domain_keywords = []
-    noise_words = []
-
-    if task.domain_keywords:
-        try:
-            # 尝试解析JSON格式
-            domain_keywords = json.loads(task.domain_keywords)
-        except json.JSONDecodeError:
-            # 否则按逗号分隔
-            domain_keywords = [kw.strip() for kw in task.domain_keywords.split(',') if kw.strip()]
-
-    if task.noise_words:
-        try:
-            noise_words = json.loads(task.noise_words)
-        except json.JSONDecodeError:
-            noise_words = [nw.strip() for nw in task.noise_words.split(',') if nw.strip()]
+    # 解析用户自定义配置（兼容 JSON / 中英文逗号 / 分号 / 顿号 / 换行）
+    domain_keywords = _parse_user_terms(task.domain_keywords)
+    noise_words = _parse_user_terms(task.noise_words)
 
     # 优先使用分段结果
     segment_output = context.get("segment", {})
@@ -438,7 +424,7 @@ def execute_keyword_node(db, task_id: str, context: dict) -> dict:
             text,
             top_n=15,
             use_mmr=True,
-            diversity=0.7,
+            diversity=0.3,
             domain_keywords=domain_keywords,
             noise_words=noise_words
         )
@@ -464,22 +450,9 @@ def execute_summary_node(db, task_id: str, context: dict) -> dict:
     if not task:
         raise ValueError("任务不存在")
 
-    # 解析用户自定义配置
-    import json
-    domain_keywords = []
-    noise_words = []
-
-    if task.domain_keywords:
-        try:
-            domain_keywords = json.loads(task.domain_keywords)
-        except json.JSONDecodeError:
-            domain_keywords = [kw.strip() for kw in task.domain_keywords.split(',') if kw.strip()]
-
-    if task.noise_words:
-        try:
-            noise_words = json.loads(task.noise_words)
-        except json.JSONDecodeError:
-            noise_words = [nw.strip() for nw in task.noise_words.split(',') if nw.strip()]
+    # 解析用户自定义配置（兼容 JSON / 中英文逗号 / 分号 / 顿号 / 换行）
+    domain_keywords = _parse_user_terms(task.domain_keywords)
+    noise_words = _parse_user_terms(task.noise_words)
 
     # 获取文本
     parse_output = context.get("parse", {})
@@ -509,6 +482,48 @@ def execute_summary_node(db, task_id: str, context: dict) -> dict:
         domain_keywords=domain_keywords,
         noise_words=noise_words
     )
+    return result
+
+
+def _parse_user_terms(raw_value: str) -> list:
+    """
+    解析用户输入的关键词配置，兼容以下格式：
+    1) JSON 数组：["a", "b"]
+    2) 逗号/分号/顿号/换行分隔：a,b 或 a，b 或 a；b 或 a、b
+    """
+    if not raw_value or not str(raw_value).strip():
+        return []
+
+    parsed = raw_value
+    try:
+        parsed = json.loads(raw_value)
+    except Exception:
+        parsed = raw_value
+
+    items = []
+    if isinstance(parsed, list):
+        for item in parsed:
+            if item is None:
+                continue
+            items.append(str(item))
+    else:
+        items.append(str(parsed))
+
+    result = []
+    seen = set()
+    for item in items:
+        # 进一步拆分，避免 ["a，b，c"] 这种单元素列表漏切分
+        chunks = re.split(r"[,，;；、\n\r\t]+", item)
+        for chunk in chunks:
+            term = chunk.strip().strip("\"'[](){}")
+            if not term:
+                continue
+            key = term.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(term)
+
     return result
 
 

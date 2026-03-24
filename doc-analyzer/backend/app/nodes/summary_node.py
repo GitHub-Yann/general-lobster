@@ -90,7 +90,8 @@ def _is_noise_sentence(sentence: str, noise_set: set) -> bool:
     # 同时检查是否包含URL模式
     has_url = 'http' in sentence_lower or 'https' in sentence_lower
     has_path = '/' in sentence and ('api' in sentence_lower or 'svc' in sentence_lower)
-    return noise_count >= 1 or has_url or has_path  # 只要有1个噪音词或包含URL/路径就过滤
+    # 过滤策略不要过激：避免因为命中单个噪音词误删有效句
+    return has_url or has_path or noise_count >= 2
 
 
 def _score_sentence_by_domain(sentence: str, domain_keywords: List[str]) -> float:
@@ -223,9 +224,14 @@ def _split_sentences(text: str) -> List[str]:
     
     # 清理并过滤
     result = []
+    seen = set()
     for s in sentences:
         s = s.strip()
         if len(s) > 10:  # 过滤太短的句子
+            normalized = re.sub(r'\s+', '', s)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
             result.append(s)
     
     return result
