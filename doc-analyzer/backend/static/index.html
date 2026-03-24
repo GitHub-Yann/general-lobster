@@ -402,11 +402,14 @@
                     formData.append('file', options.file);
                     
                     try {
+                        console.log('开始上传文件:', options.file.name);
                         const response = await axios.post(`${API_BASE}/api/tasks`, formData, {
                             headers: { 'Content-Type': 'multipart/form-data' }
                         });
+                        console.log('上传响应:', response.data);
                         options.onSuccess(response.data);
                     } catch (error) {
+                        console.error('上传失败:', error);
                         options.onError(error);
                     }
                 };
