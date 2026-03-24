@@ -171,6 +171,40 @@
         .url-input {
             margin-top: 20px;
         }
+        .keyword-config {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px dashed #dcdfe6;
+        }
+        .config-title {
+            font-weight: 600;
+            color: #606266;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        .config-hint {
+            color: #909399;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .submit-area {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .file-selected {
+            background: #f0f9ff;
+            border: 1px solid #409eff;
+            border-radius: 4px;
+            padding: 12px;
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .file-selected .filename {
+            color: #409eff;
+            font-weight: 500;
+        }
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -194,18 +228,19 @@
             <!-- 上传区域 -->
             <el-card class="upload-card">
                 <template #header>
-                    <span>📄 上传文档</span>
+                    <span>📄 新建分析任务</span>
                 </template>
                 
-                <!-- 文件上传 -->
+                <!-- 文件选择 -->
                 <el-upload
                     class="upload-demo"
                     drag
-                    action="/api/tasks"
-                    :http-request="customUpload"
-                    :on-success="handleUploadSuccess"
-                    :on-error="handleUploadError"
+                    action="#"
+                    :auto-upload="false"
+                    :on-change="handleFileChange"
+                    :on-remove="handleFileRemove"
                     accept=".pdf,.docx,.txt"
+                    :limit="1"
                 >
                     <el-icon class="upload-icon"><upload-filled /></el-icon>
                     <div class="upload-text">
@@ -218,17 +253,53 @@
 
                 <!-- URL 输入 -->
                 <div class="url-input">
+                    <div style="color: #606266; font-size: 14px; margin-bottom: 8px;">或输入文章链接：</div>
                     <el-input
                         v-model="urlInput"
-                        placeholder="输入文章链接 URL"
-                        class="input-with-button"
+                        placeholder="https://example.com/article"
+                        clearable
                     >
-                        <template #append>
-                            <el-button type="primary" @click="submitUrl" :loading="urlLoading">
-                                分析 URL
-                            </el-button>
-                        </template>
                     </el-input>
+                </div>
+
+                <!-- 关键词配置 -->
+                <div class="keyword-config">
+                    <div class="config-title">🎯 关键词提取配置（可选）</div>
+                    
+                    <el-form label-position="top">
+                        <el-form-item label="领域关键词">
+                            <el-input
+                                v-model="domainKeywords"
+                                type="textarea"
+                                :rows="2"
+                                placeholder="输入文档的核心概念，用逗号分隔，如：飞书文档, 索引, Agent, 检索"
+                            ></el-input>
+                            <div class="config-hint">这些词汇会被优先提取并提高权重</div>
+                        </el-form-item>
+                        
+                        <el-form-item label="过滤噪音词">
+                            <el-input
+                                v-model="noiseWords"
+                                type="textarea"
+                                :rows="2"
+                                placeholder="输入需要过滤的噪音词，用逗号分隔，如：http, https, api, com"
+                            ></el-input>
+                            <div class="config-hint">这些词汇会被排除在关键词之外</div>
+                        </el-form-item>
+                    </el-form>
+                </div>
+
+                <!-- 提交按钮 -->
+                <div class="submit-area">
+                    <el-button 
+                        type="primary" 
+                        size="large"
+                        @click="submitTask"
+                        :loading="submitLoading"
+                        :disabled="!canSubmit"
+                    >
+                        开始分析
+                    </el-button>
                 </div>
             </el-card>
 
@@ -345,6 +416,17 @@
 
                 const deleteLoading = ref('');
 
+                // 表单相关
+                const selectedFile = ref(null);
+                const domainKeywords = ref('');
+                const noiseWords = ref('');
+                const submitLoading = ref(false);
+
+                // 计算属性：是否可以提交
+                const canSubmit = Vue.computed(() => {
+                    return selectedFile.value || urlInput.value.trim();
+                });
+
                 // 状态文本映射
                 const statusText = (status) => {
                     const map = {
@@ -411,6 +493,66 @@
                     } catch (error) {
                         console.error('上传失败:', error);
                         options.onError(error);
+                    }
+                };
+
+                // 文件选择变化
+                const handleFileChange = (file) => {
+                    selectedFile.value = file.raw;
+                    console.log('选择文件:', file.name);
+                };
+
+                // 文件移除
+                const handleFileRemove = () => {
+                    selectedFile.value = null;
+                };
+
+                // 提交任务
+                const submitTask = async () => {
+                    if (!selectedFile.value && !urlInput.value.trim()) {
+                        ElMessage.warning('请选择文件或输入URL');
+                        return;
+                    }
+
+                    submitLoading.value = true;
+                    try {
+                        const formData = new FormData();
+                        
+                        if (selectedFile.value) {
+                            formData.append('file', selectedFile.value);
+                        } else {
+                            formData.append('url', urlInput.value.trim());
+                        }
+                        
+                        // 添加关键词配置
+                        if (domainKeywords.value.trim()) {
+                            formData.append('domain_keywords', domainKeywords.value.trim());
+                        }
+                        if (noiseWords.value.trim()) {
+                            formData.append('noise_words', noiseWords.value.trim());
+                        }
+
+                        const response = await axios.post(`${API_BASE}/api/tasks`, formData, {
+                            headers: { 'Content-Type': 'multipart/form-data' }
+                        });
+
+                        ElMessage.success('任务创建成功');
+                        
+                        // 清空表单
+                        selectedFile.value = null;
+                        urlInput.value = '';
+                        domainKeywords.value = '';
+                        noiseWords.value = '';
+                        
+                        // 刷新列表并开始轮询
+                        setTimeout(() => {
+                            fetchTasks();
+                            startPolling(response.data.task_id);
+                        }, 500);
+                    } catch (error) {
+                        ElMessage.error('创建任务失败: ' + (error.response?.data?.detail || error.message));
+                    } finally {
+                        submitLoading.value = false;
                     }
                 };
 
@@ -572,14 +714,20 @@
                     retryLoading,
                     deleteLoading,
                     results,
+                    // 表单相关
+                    selectedFile,
+                    domainKeywords,
+                    noiseWords,
+                    submitLoading,
+                    canSubmit,
+                    // 方法
                     statusText,
                     nodeName,
                     formatTime,
                     refreshTasks,
-                    customUpload,
-                    handleUploadSuccess,
-                    handleUploadError,
-                    submitUrl,
+                    handleFileChange,
+                    handleFileRemove,
+                    submitTask,
                     viewResult,
                     retryTask,
                     deleteTask

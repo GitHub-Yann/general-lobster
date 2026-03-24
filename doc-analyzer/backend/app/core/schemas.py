@@ -9,6 +9,8 @@ from pydantic import BaseModel
 class TaskCreate(BaseModel):
     """创建任务请求"""
     config_name: str = "default"
+    domain_keywords: Optional[str] = None  # 逗号分隔的领域关键词
+    noise_words: Optional[str] = None  # 逗号分隔的噪音词
 
 
 class TaskResponse(BaseModel):

@@ -73,34 +73,34 @@ class NodeExecutionError(Exception):
 def process_task(self, task_id: str, start_from_node: str = None):
     """
     处理文档分析任务的主流程
-    
+
     Args:
         task_id: 任务ID
         start_from_node: 从指定节点开始执行（用于重试）
     """
     db = SessionLocal()
-    
+
     try:
         # 获取任务信息
         task = db.query(Task).filter(Task.task_id == task_id).first()
         if not task:
             raise ValueError(f"任务不存在: {task_id}")
-        
+
         # 获取节点配置
         config = db.query(NodeConfig).filter(
             NodeConfig.config_name == task.config_name
         ).first()
-        
+
         if not config:
             raise ValueError(f"节点配置不存在: {task.config_name}")
-        
+
         node_list = json.loads(config.nodes)
-        
+
         # 如果指定了起始节点，找到该节点位置
         if start_from_node and start_from_node in node_list:
             start_index = node_list.index(start_from_node)
             node_list = node_list[start_index:]
-            
+
             # 重置该节点及后续节点的状态
             for node_name in node_list:
                 node_data = db.query(NodeData).filter(
@@ -111,19 +111,19 @@ def process_task(self, task_id: str, start_from_node: str = None):
                     node_data.status = "pending"
                     node_data.error_msg = None
                     db.commit()
-        
+
         # 更新任务状态
         task.status = "running"
         db.commit()
-        
+
         # 执行节点流程
         context = _load_context(db, task_id, node_list)
-        
+
         for node_name in node_list:
             # 更新当前节点
             task.current_node = node_name
             db.commit()
-            
+
             # 执行节点
             try:
                 result = execute_node_with_retry(db, task_id, node_name, context)
@@ -131,7 +131,7 @@ def process_task(self, task_id: str, start_from_node: str = None):
                 # 节点执行失败，更新任务状态
                 task.status = "failed"
                 db.commit()
-                
+
                 return {
                     "task_id": task_id,
                     "status": "failed",
@@ -139,26 +139,26 @@ def process_task(self, task_id: str, start_from_node: str = None):
                     "error": e.message,
                     "traceback": traceback.format_exc()
                 }
-            
+
             # 保存节点输出到上下文
             context[node_name] = result.get("output", {})
-        
+
         # 所有节点执行成功
         task.status = "completed"
         task.completed_at = datetime.utcnow()
-        
+
         # 保存最终结果
         final_result = context.get("output", {})
         task.result_data = json.dumps(final_result, ensure_ascii=False)
-        
+
         db.commit()
-        
+
         return {
             "task_id": task_id,
             "status": "completed",
             "result": final_result
         }
-        
+
     except Exception as exc:
         # 更新任务失败状态
         try:
@@ -168,7 +168,7 @@ def process_task(self, task_id: str, start_from_node: str = None):
                 db.commit()
         except:
             pass
-        
+
         # 重试逻辑
         try:
             self.retry(exc=exc)
@@ -186,30 +186,30 @@ def process_task(self, task_id: str, start_from_node: str = None):
 def _load_context(db, task_id: str, node_list: list) -> dict:
     """加载已完成的节点数据到上下文"""
     context = {}
-    
+
     for node_name in node_list:
         node_data = db.query(NodeData).filter(
             NodeData.task_id == task_id,
             NodeData.node_name == node_name,
             NodeData.status == "completed"
         ).first()
-        
+
         if node_data and node_data.output_data:
             try:
                 context[node_name] = json.loads(node_data.output_data)
             except json.JSONDecodeError:
                 pass
-    
+
     return context
 
 
-def execute_node_with_retry(db, task_id: str, node_name: str, context: dict, 
+def execute_node_with_retry(db, task_id: str, node_name: str, context: dict,
                             max_retries: int = 2) -> dict:
     """
     执行单个节点（带重试）
     """
     last_error = None
-    
+
     for attempt in range(max_retries + 1):
         try:
             return _execute_node_internal(db, task_id, node_name, context)
@@ -220,7 +220,7 @@ def execute_node_with_retry(db, task_id: str, node_name: str, context: dict,
                 import time
                 time.sleep(2 ** attempt)  # 指数退避
                 continue
-    
+
     # 所有重试都失败
     raise NodeExecutionError(
         node_name=node_name,
@@ -297,11 +297,11 @@ def _run_node_logic(node_name: str, db, task_id: str, context: dict) -> dict:
         "summary": execute_summary_node,
         "output": execute_output_node,
     }
-    
+
     executor = node_executors.get(node_name)
     if not executor:
         raise ValueError(f"未知节点类型: {node_name}")
-    
+
     return executor(db, task_id, context)
 
 
@@ -310,7 +310,7 @@ def execute_upload_node(db, task_id: str, context: dict) -> dict:
     task = db.query(Task).filter(Task.task_id == task_id).first()
     if not task:
         raise ValueError("任务不存在")
-    
+
     import os
     if task.file_type == 'url':
         # URL 类型不需要本地文件
@@ -319,16 +319,16 @@ def execute_upload_node(db, task_id: str, context: dict) -> dict:
             "filename": task.filename,
             "file_type": task.file_type
         }
-    
+
     if not os.path.exists(task.file_path):
         raise ValueError(f"文件不存在: {task.file_path}")
-    
+
     # 检查文件大小
     file_size = os.path.getsize(task.file_path)
     max_size = 50 * 1024 * 1024  # 50MB
     if file_size > max_size:
         raise ValueError(f"文件过大: {file_size / 1024 / 1024:.1f}MB > 50MB")
-    
+
     return {
         "file_path": task.file_path,
         "filename": task.filename,
@@ -342,10 +342,10 @@ def execute_parse_node(db, task_id: str, context: dict) -> dict:
     upload_output = context.get("upload", {})
     file_path = upload_output.get("file_path")
     file_type = upload_output.get("file_type")
-    
+
     if not file_path or not file_type:
         raise ValueError("缺少文件信息")
-    
+
     try:
         result = parse_document(file_path, file_type)
         return result
@@ -357,21 +357,21 @@ def execute_segment_node(db, task_id: str, context: dict) -> dict:
     """分段节点"""
     parse_output = context.get("parse", {})
     text = parse_output.get("text", "")
-    
+
     if not text:
         # 尝试从 upload 获取（TXT 文件跳过 parse 节点的情况）
         upload_output = context.get("upload", {})
         file_path = upload_output.get("file_path")
         file_type = upload_output.get("file_type")
-        
+
         if file_type == "txt" and file_path:
             from app.nodes.parse_node import _parse_txt
             result = _parse_txt(file_path)
             text = result.get("text", "")
-    
+
     if not text:
         raise ValueError("没有可分析的文本")
-    
+
     # 根据文本长度动态调整分段参数
     text_length = len(text)
     if text_length < 5000:
@@ -380,17 +380,41 @@ def execute_segment_node(db, task_id: str, context: dict) -> dict:
         max_length = 3000
     else:
         max_length = 4000
-    
+
     result = segment_text(text, max_segment_length=max_length, overlap=200)
     return result
 
 
 def execute_keyword_node(db, task_id: str, context: dict) -> dict:
     """关键词提取节点"""
+    # 获取任务信息（用于读取用户自定义关键词配置）
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    if not task:
+        raise ValueError("任务不存在")
+
+    # 解析用户自定义配置
+    import json
+    domain_keywords = []
+    noise_words = []
+
+    if task.domain_keywords:
+        try:
+            # 尝试解析JSON格式
+            domain_keywords = json.loads(task.domain_keywords)
+        except json.JSONDecodeError:
+            # 否则按逗号分隔
+            domain_keywords = [kw.strip() for kw in task.domain_keywords.split(',') if kw.strip()]
+
+    if task.noise_words:
+        try:
+            noise_words = json.loads(task.noise_words)
+        except json.JSONDecodeError:
+            noise_words = [nw.strip() for nw in task.noise_words.split(',') if nw.strip()]
+
     # 优先使用分段结果
     segment_output = context.get("segment", {})
     segments = segment_output.get("segments", [])
-    
+
     if segments:
         # 合并前几个段落进行关键词提取
         text = " ".join(segments[:5])  # 取前5段
@@ -398,21 +422,37 @@ def execute_keyword_node(db, task_id: str, context: dict) -> dict:
         # 使用解析结果
         parse_output = context.get("parse", {})
         text = parse_output.get("text", "")
-    
+
     if not text:
         raise ValueError("没有可分析的文本")
-    
+
     # 限制文本长度以提高性能
     max_text_length = 10000
     if len(text) > max_text_length:
         text = text[:max_text_length]
-    
+
+    logger.info(f"[Task {task_id}] 关键词提取 - 领域词: {domain_keywords}, 噪音词: {noise_words}")
+
     try:
-        result = extract_keywords(text, top_n=15, use_mmr=True, diversity=0.7)
+        result = extract_keywords(
+            text,
+            top_n=15,
+            use_mmr=True,
+            diversity=0.7,
+            domain_keywords=domain_keywords,
+            noise_words=noise_words
+        )
         return result
     except Exception as e:
+        logger.error(f"[Task {task_id}] 关键词提取失败: {e}")
         # 如果 KeyBERT 失败，使用备选方案
-        result = extract_keywords(text, top_n=15, use_mmr=False)
+        result = extract_keywords(
+            text,
+            top_n=15,
+            use_mmr=False,
+            domain_keywords=domain_keywords,
+            noise_words=noise_words
+        )
         result["method"] = "fallback"
         return result
 
@@ -422,10 +462,10 @@ def execute_summary_node(db, task_id: str, context: dict) -> dict:
     # 获取文本
     parse_output = context.get("parse", {})
     text = parse_output.get("text", "")
-    
+
     if not text:
         raise ValueError("没有可总结的文本")
-    
+
     # 根据文本长度动态调整摘要长度
     text_length = len(text)
     if text_length < 1000:
@@ -437,7 +477,7 @@ def execute_summary_node(db, task_id: str, context: dict) -> dict:
     else:
         max_length = 600
         min_length = 200
-    
+
     result = generate_summary(text, max_length=max_length, min_length=min_length)
     return result
 
@@ -448,7 +488,7 @@ def execute_output_node(db, task_id: str, context: dict) -> dict:
     segment_output = context.get("segment", {})
     keyword_output = context.get("keyword", {})
     summary_output = context.get("summary", {})
-    
+
     result = generate_output(
         task_id=task_id,
         parse_result=parse_output,
@@ -456,7 +496,7 @@ def execute_output_node(db, task_id: str, context: dict) -> dict:
         keyword_result=keyword_output,
         summary_result=summary_output
     )
-    
+
     # 添加处理统计信息
     result["processing_info"] = {
         "completed_at": datetime.utcnow().isoformat(),
@@ -464,5 +504,5 @@ def execute_output_node(db, task_id: str, context: dict) -> dict:
         "keyword_method": keyword_output.get("method", "keybert"),
         "summary_method": summary_output.get("method", "textrank"),
     }
-    
+
     return result

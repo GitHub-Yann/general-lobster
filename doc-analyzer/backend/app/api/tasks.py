@@ -67,6 +67,8 @@ def get_file_type(filename: str) -> str:
 async def create_url_task(
     url: str = Form(...),
     config_name: Optional[str] = Form("default"),
+    domain_keywords: Optional[str] = Form(None),
+    noise_words: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -85,6 +87,8 @@ async def create_url_task(
         file_path=url,  # URL 直接存 file_path
         file_type="url",
         config_name=config_name,
+        domain_keywords=domain_keywords,
+        noise_words=noise_words,
         status="pending",
         current_node="upload"
     )
@@ -108,6 +112,8 @@ async def create_url_task(
 async def create_task(
     file: UploadFile = File(...),
     config_name: Optional[str] = Form("default"),
+    domain_keywords: Optional[str] = Form(None),
+    noise_words: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -146,6 +152,8 @@ async def create_task(
         file_path=file_path,
         file_type=file_type,
         config_name=config_name,
+        domain_keywords=domain_keywords,
+        noise_words=noise_words,
         status="pending",
         current_node="upload"
     )
