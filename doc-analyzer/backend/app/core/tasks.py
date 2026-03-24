@@ -4,10 +4,15 @@ Celery 异步任务定义
 """
 import json
 import os
+import sys
 import traceback
 from datetime import datetime
 from celery import Celery
 from celery.exceptions import MaxRetriesExceededError
+import logging
+
+# 配置 Celery 日志
+logger = logging.getLogger(__name__)
 
 # 从 .env 加载配置
 from pathlib import Path
@@ -231,7 +236,7 @@ def _execute_node_internal(db, task_id: str, node_name: str, context: dict) -> d
         NodeData.task_id == task_id,
         NodeData.node_name == node_name
     ).first()
-    
+
     if not node_data:
         node_data = NodeData(
             task_id=task_id,
@@ -240,41 +245,45 @@ def _execute_node_internal(db, task_id: str, node_name: str, context: dict) -> d
         )
         db.add(node_data)
         db.commit()
-    
+
     # 如果节点已完成，直接返回缓存结果
     if node_data.status == "completed" and node_data.output_data:
+        logger.info(f"[Task {task_id}] 节点 [{node_name}] 已缓存，跳过执行")
         return {
             "status": "completed",
             "output": json.loads(node_data.output_data)
         }
-    
+
     # 更新为运行中
     node_data.status = "running"
     node_data.started_at = datetime.utcnow()
     node_data.input_data = json.dumps(context, ensure_ascii=False, default=str)
     db.commit()
-    
+    logger.info(f"[Task {task_id}] 节点 [{node_name}] 开始执行...")
+
     try:
         # 根据节点类型执行
         output = _run_node_logic(node_name, db, task_id, context)
-        
+
         # 更新节点完成状态
         node_data.status = "completed"
         node_data.output_data = json.dumps(output, ensure_ascii=False, default=str)
         node_data.completed_at = datetime.utcnow()
         db.commit()
-        
+
+        logger.info(f"[Task {task_id}] 节点 [{node_name}] 执行完成 ✓")
         return {
             "status": "completed",
             "output": output
         }
-        
+
     except Exception as e:
         # 更新节点失败状态
         node_data.status = "failed"
         node_data.error_msg = f"{str(e)}\n{traceback.format_exc()}"
         db.commit()
-        
+
+        logger.error(f"[Task {task_id}] 节点 [{node_name}] 执行失败 ✗: {str(e)}")
         raise
 
 

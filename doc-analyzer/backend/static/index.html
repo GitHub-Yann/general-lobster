@@ -480,18 +480,18 @@
                         try {
                             const response = await axios.get(`${API_BASE}/api/tasks/${taskId}`);
                             const task = response.data;
-                            
+
                             // 更新任务列表中的状态
                             const index = tasks.value.findIndex(t => t.task_id === taskId);
                             if (index !== -1) {
                                 tasks.value[index] = task;
                             }
-                            
+
                             // 如果任务完成或失败，停止轮询
                             if (task.status === 'completed' || task.status === 'failed') {
                                 clearInterval(pollingIntervals[taskId]);
                                 delete pollingIntervals[taskId];
-                                
+
                                 if (task.status === 'completed') {
                                     ElMessage.success('任务处理完成');
                                 }
@@ -499,7 +499,7 @@
                         } catch (error) {
                             console.error('轮询失败', error);
                         }
-                    }, 2000); // 每2秒轮询一次
+                    }, 5000); // 每5秒轮询一次
                 };
 
                 // 页面加载时获取任务列表
