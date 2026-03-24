@@ -53,12 +53,15 @@ from app.db.database import SessionLocal
 from app.models.task import Task
 from app.models.node_data import NodeData
 from app.models.node_config import NodeConfig
+from app.models.llm_config import LLMConfig
+from app.models.llm_prompt_template import LLMPromptTemplate
 
 from app.nodes.parse_node import parse_document
 from app.nodes.segment_node import segment_text
 from app.nodes.keyword_node import extract_keywords
 from app.nodes.summary_node import generate_summary
 from app.nodes.output_node import generate_output
+from app.core.llm_service import LLMService, DEFAULT_SYSTEM_PROMPT, DEFAULT_USER_TEMPLATE
 
 
 class NodeExecutionError(Exception):
@@ -96,6 +99,13 @@ def process_task(self, task_id: str, start_from_node: str = None):
             raise ValueError(f"节点配置不存在: {task.config_name}")
 
         node_list = json.loads(config.nodes)
+        # 可选：在摘要之后插入 LLM 精修节点
+        if task.use_llm_refine:
+            if "summary" in node_list and "output" in node_list and "llm_refine" not in node_list:
+                output_index = node_list.index("output")
+                node_list.insert(output_index, "llm_refine")
+        else:
+            node_list = [n for n in node_list if n != "llm_refine"]
 
         # 如果指定了起始节点，找到该节点位置
         if start_from_node and start_from_node in node_list:
@@ -296,6 +306,7 @@ def _run_node_logic(node_name: str, db, task_id: str, context: dict) -> dict:
         "segment": execute_segment_node,
         "keyword": execute_keyword_node,
         "summary": execute_summary_node,
+        "llm_refine": execute_llm_refine,
         "output": execute_output_node,
     }
 
@@ -533,21 +544,193 @@ def execute_output_node(db, task_id: str, context: dict) -> dict:
     segment_output = context.get("segment", {})
     keyword_output = context.get("keyword", {})
     summary_output = context.get("summary", {})
+    llm_refine_output = context.get("llm_refine", {})
+
+    # 默认使用抽取结果；LLM 精修成功时覆盖
+    final_keyword_output = keyword_output
+    final_summary_output = summary_output
+    if llm_refine_output.get("used"):
+        if llm_refine_output.get("keywords"):
+            final_keyword_output = {
+                **keyword_output,
+                "keywords": llm_refine_output.get("keywords", []),
+                "total_keywords": len(llm_refine_output.get("keywords", [])),
+                "method": "llm_refine"
+            }
+        if llm_refine_output.get("summary"):
+            final_summary_output = {
+                **summary_output,
+                "summary": llm_refine_output.get("summary", ""),
+                "method": "llm_refine"
+            }
 
     result = generate_output(
         task_id=task_id,
         parse_result=parse_output,
         segment_result=segment_output,
-        keyword_result=keyword_output,
-        summary_result=summary_output
+        keyword_result=final_keyword_output,
+        summary_result=final_summary_output
     )
 
     # 添加处理统计信息
     result["processing_info"] = {
         "completed_at": datetime.utcnow().isoformat(),
         "segment_count": segment_output.get("segment_count", 0),
-        "keyword_method": keyword_output.get("method", "keybert"),
-        "summary_method": summary_output.get("method", "textrank"),
+        "keyword_method": final_keyword_output.get("method", "keybert"),
+        "summary_method": final_summary_output.get("method", "textrank"),
+        "llm_refine_used": bool(llm_refine_output.get("used")),
+        "llm_refine_reason": llm_refine_output.get("reason", ""),
+        "llm_provider": llm_refine_output.get("provider", ""),
+        "llm_model": llm_refine_output.get("model", ""),
     }
 
     return result
+
+
+def execute_llm_refine_node(db, task_id: str, context: dict) -> dict:
+    """兼容命名（防止旧引用）"""
+    return execute_llm_refine(db, task_id, context)
+
+
+def execute_llm_refine(db, task_id: str, context: dict) -> dict:
+    """LLM 精修节点：对关键词+摘要进行重写整合，可选执行"""
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    if not task:
+        raise ValueError("任务不存在")
+
+    if not task.use_llm_refine:
+        return {"used": False, "reason": "disabled"}
+
+    parse_output = context.get("parse", {})
+    keyword_output = context.get("keyword", {})
+    summary_output = context.get("summary", {})
+    text = parse_output.get("text", "")
+    if not text:
+        return {"used": False, "reason": "empty_text"}
+
+    llm_config = _resolve_llm_config(db, task.llm_config_id)
+    if not llm_config:
+        return {"used": False, "reason": "llm_config_not_found"}
+
+    prompt_template = _resolve_prompt_template(db, task.prompt_template_id)
+    system_prompt = prompt_template.system_prompt if prompt_template else DEFAULT_SYSTEM_PROMPT
+    user_template = prompt_template.user_prompt_template if prompt_template else DEFAULT_USER_TEMPLATE
+
+    payload = _build_llm_payload(
+        parse_output=parse_output,
+        keyword_output=keyword_output,
+        summary_output=summary_output,
+        domain_keywords=_parse_user_terms(task.domain_keywords),
+        noise_words=_parse_user_terms(task.noise_words),
+    )
+
+    try:
+        llm_result = LLMService.refine_keywords_and_summary(
+            provider_name=llm_config.provider,
+            api_key=llm_config.api_key or "",
+            api_base=llm_config.api_base,
+            model=llm_config.model,
+            payload=payload,
+            system_prompt=system_prompt,
+            user_prompt_template=user_template,
+            timeout=60
+        )
+    except Exception as e:
+        logger.warning(f"[Task {task_id}] LLM 精修失败，回退抽取版: {e}")
+        return {"used": False, "reason": f"llm_call_failed: {str(e)}"}
+
+    guard = _guard_llm_result(
+        llm_result=llm_result,
+        keyword_output=keyword_output,
+        summary_output=summary_output
+    )
+    if not guard["passed"]:
+        return {"used": False, "reason": f"guard_rejected: {guard['reason']}"}
+
+    return {
+        "used": True,
+        "reason": "ok",
+        "keywords": llm_result.get("keywords", []),
+        "summary": llm_result.get("summary", ""),
+        "provider": llm_config.provider,
+        "model": llm_config.model,
+        "prompt_template_id": prompt_template.id if prompt_template else None,
+        "prompt_version": prompt_template.version if prompt_template else None,
+    }
+
+
+def _resolve_llm_config(db, llm_config_id: int = None):
+    if llm_config_id:
+        cfg = db.query(LLMConfig).filter(LLMConfig.id == llm_config_id).first()
+        if cfg and cfg.enabled:
+            return cfg
+    return db.query(LLMConfig).filter(LLMConfig.enabled == True).order_by(LLMConfig.updated_at.desc()).first()
+
+
+def _resolve_prompt_template(db, prompt_template_id: int = None):
+    if prompt_template_id:
+        tpl = db.query(LLMPromptTemplate).filter(LLMPromptTemplate.id == prompt_template_id).first()
+        if tpl and tpl.enabled:
+            return tpl
+    return db.query(LLMPromptTemplate).filter(
+        LLMPromptTemplate.scene == "doc_refine",
+        LLMPromptTemplate.enabled == True
+    ).order_by(LLMPromptTemplate.updated_at.desc()).first()
+
+
+def _build_llm_payload(parse_output: dict, keyword_output: dict, summary_output: dict,
+                       domain_keywords: list, noise_words: list) -> dict:
+    text = parse_output.get("text", "") or ""
+    sentences = re.split(r"[。！？；;\n]+", text)
+    sentences = [s.strip() for s in sentences if len(s.strip()) >= 12]
+
+    keyword_words = [k.get("word", "") for k in keyword_output.get("keywords", []) if isinstance(k, dict)]
+    candidate_sentences = []
+    for s in sentences:
+        score = 0
+        for kw in keyword_words[:10]:
+            if kw and kw in s:
+                score += 1
+        for kw in domain_keywords[:10]:
+            if kw and kw in s:
+                score += 1
+        if score > 0:
+            candidate_sentences.append((score, s))
+    candidate_sentences.sort(key=lambda x: x[0], reverse=True)
+
+    return {
+        "title": parse_output.get("title", ""),
+        "original_summary": summary_output.get("summary", ""),
+        "keywords": keyword_output.get("keywords", [])[:15],
+        "candidate_sentences": [s for _, s in candidate_sentences[:12]],
+        "domain_keywords": domain_keywords[:20],
+        "noise_words": noise_words[:20],
+        "constraints": {
+            "max_keywords": 15,
+            "summary_style": "简介",
+            "forbid_hallucination": True
+        }
+    }
+
+
+def _guard_llm_result(llm_result: dict, keyword_output: dict, summary_output: dict) -> dict:
+    keywords = llm_result.get("keywords", [])
+    summary = (llm_result.get("summary") or "").strip()
+    if not summary:
+        return {"passed": False, "reason": "empty_summary"}
+    if len(summary) < 40:
+        return {"passed": False, "reason": "summary_too_short"}
+    if len(summary) > 800:
+        return {"passed": False, "reason": "summary_too_long"}
+    if not isinstance(keywords, list) or len(keywords) == 0:
+        return {"passed": False, "reason": "empty_keywords"}
+
+    # 术语保留率：原 Top10 至少命中 40%
+    old_words = [k.get("word", "") for k in keyword_output.get("keywords", []) if isinstance(k, dict)][:10]
+    old_words = [w for w in old_words if w]
+    if old_words:
+        hits = sum(1 for w in old_words if w in summary)
+        if hits / len(old_words) < 0.4:
+            return {"passed": False, "reason": "term_recall_low"}
+
+    return {"passed": True, "reason": "ok"}

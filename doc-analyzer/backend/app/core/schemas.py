@@ -21,6 +21,9 @@ class TaskResponse(BaseModel):
     filename: Optional[str] = None
     file_type: Optional[str] = None
     current_node: Optional[str] = None
+    use_llm_refine: Optional[bool] = None
+    llm_config_id: Optional[int] = None
+    prompt_template_id: Optional[int] = None
     nodes: Optional[List[dict]] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None

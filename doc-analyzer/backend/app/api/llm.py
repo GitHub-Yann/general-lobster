@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.llm_config import LLMConfig
+from app.models.llm_prompt_template import LLMPromptTemplate
 from app.core.llm_service import LLMService
 
 router = APIRouter()
@@ -21,9 +22,12 @@ async def list_providers():
 
 
 @router.get("")
-async def list_llm_configs(db: Session = Depends(get_db)):
+async def list_llm_configs(enabled: Optional[bool] = None, db: Session = Depends(get_db)):
     """获取 LLM 配置列表"""
-    configs = db.query(LLMConfig).all()
+    query = db.query(LLMConfig)
+    if enabled is not None:
+        query = query.filter(LLMConfig.enabled == enabled)
+    configs = query.order_by(LLMConfig.updated_at.desc()).all()
     return {
         "items": [config.to_dict() for config in configs]
     }
@@ -131,3 +135,106 @@ async def delete_llm_config(config_id: int, db: Session = Depends(get_db)):
     return {
         "message": "配置删除成功"
     }
+
+
+@router.get("/prompts")
+async def list_prompt_templates(
+    scene: Optional[str] = None,
+    enabled: Optional[bool] = None,
+    db: Session = Depends(get_db)
+):
+    """获取 Prompt 模板列表"""
+    query = db.query(LLMPromptTemplate)
+    if scene:
+        query = query.filter(LLMPromptTemplate.scene == scene)
+    if enabled is not None:
+        query = query.filter(LLMPromptTemplate.enabled == enabled)
+    items = query.order_by(LLMPromptTemplate.updated_at.desc()).all()
+    return {"items": [item.to_dict() for item in items]}
+
+
+@router.post("/prompts")
+async def create_prompt_template(
+    name: str,
+    scene: str = "doc_refine",
+    version: str = "v1",
+    system_prompt: str = "",
+    user_prompt_template: str = "",
+    enabled: bool = True,
+    db: Session = Depends(get_db)
+):
+    """创建 Prompt 模板"""
+    if not system_prompt.strip() or not user_prompt_template.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="system_prompt 和 user_prompt_template 不能为空"
+        )
+
+    existing = db.query(LLMPromptTemplate).filter(
+        LLMPromptTemplate.name == name,
+        LLMPromptTemplate.scene == scene,
+        LLMPromptTemplate.version == version
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"模板已存在: {name}/{scene}/{version}"
+        )
+
+    item = LLMPromptTemplate(
+        name=name,
+        scene=scene,
+        version=version,
+        system_prompt=system_prompt,
+        user_prompt_template=user_prompt_template,
+        enabled=enabled
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {"id": item.id, "message": "模板创建成功"}
+
+
+@router.put("/prompts/{template_id}")
+async def update_prompt_template(
+    template_id: int,
+    name: Optional[str] = None,
+    scene: Optional[str] = None,
+    version: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    user_prompt_template: Optional[str] = None,
+    enabled: Optional[bool] = None,
+    db: Session = Depends(get_db)
+):
+    """更新 Prompt 模板"""
+    item = db.query(LLMPromptTemplate).filter(LLMPromptTemplate.id == template_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="模板不存在")
+
+    if name:
+        item.name = name
+    if scene:
+        item.scene = scene
+    if version:
+        item.version = version
+    if system_prompt is not None:
+        item.system_prompt = system_prompt
+    if user_prompt_template is not None:
+        item.user_prompt_template = user_prompt_template
+    if enabled is not None:
+        item.enabled = enabled
+
+    db.commit()
+    db.refresh(item)
+    return {"id": item.id, "message": "模板更新成功"}
+
+
+@router.delete("/prompts/{template_id}")
+async def delete_prompt_template(template_id: int, db: Session = Depends(get_db)):
+    """删除 Prompt 模板"""
+    item = db.query(LLMPromptTemplate).filter(LLMPromptTemplate.id == template_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="模板不存在")
+    db.delete(item)
+    db.commit()
+    return {"message": "模板删除成功"}

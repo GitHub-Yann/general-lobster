@@ -47,6 +47,14 @@ REDIS_URL=redis://192.168.1.100:6379/0
 
 # 如果 Redis 在本机（默认）
 REDIS_URL=redis://localhost:6379/0
+
+# 可选：切换到 MySQL（不填则默认 SQLite）
+DATABASE_URL=mysql+pymysql://root:password@127.0.0.1:3306/doc_analyzer?charset=utf8mb4
+```
+
+如果使用 MySQL，建议先执行统一建表脚本：
+```bash
+mysql -uroot -p < backend/sql/mysql_schema.sql
 ```
 
 #### 3. 启动服务
@@ -166,7 +174,7 @@ doc-analyzer/
 
 ## 技术栈
 
-- **后端**: FastAPI + SQLAlchemy + SQLite
+- **后端**: FastAPI + SQLAlchemy + SQLite/MySQL
 - **任务队列**: Celery + Redis
 - **前端**: Vue3 + Element Plus (CDN 版本，无需构建)
 - **文档解析**: pdfplumber + python-docx

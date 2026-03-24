@@ -69,6 +69,9 @@ async def create_url_task(
     config_name: Optional[str] = Form("default"),
     domain_keywords: Optional[str] = Form(None),
     noise_words: Optional[str] = Form(None),
+    use_llm_refine: Optional[bool] = Form(False),
+    llm_config_id: Optional[int] = Form(None),
+    prompt_template_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -89,6 +92,9 @@ async def create_url_task(
         config_name=config_name,
         domain_keywords=domain_keywords,
         noise_words=noise_words,
+        use_llm_refine=bool(use_llm_refine),
+        llm_config_id=llm_config_id,
+        prompt_template_id=prompt_template_id,
         status="pending",
         current_node="upload"
     )
@@ -114,6 +120,9 @@ async def create_task(
     config_name: Optional[str] = Form("default"),
     domain_keywords: Optional[str] = Form(None),
     noise_words: Optional[str] = Form(None),
+    use_llm_refine: Optional[bool] = Form(False),
+    llm_config_id: Optional[int] = Form(None),
+    prompt_template_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -154,6 +163,9 @@ async def create_task(
         config_name=config_name,
         domain_keywords=domain_keywords,
         noise_words=noise_words,
+        use_llm_refine=bool(use_llm_refine),
+        llm_config_id=llm_config_id,
+        prompt_template_id=prompt_template_id,
         status="pending",
         current_node="upload"
     )
@@ -204,6 +216,8 @@ async def list_tasks(
         ).first()
 
         node_list = json.loads(config.nodes) if config else []
+        if task.use_llm_refine and "summary" in node_list and "output" in node_list and "llm_refine" not in node_list:
+            node_list.insert(node_list.index("output"), "llm_refine")
         node_statuses = []
         for node_name in node_list:
             node = next((n for n in nodes if n.node_name == node_name), None)
@@ -243,6 +257,8 @@ async def get_task(task_id: str, db: Session = Depends(get_db)):
     
     import json
     node_list = json.loads(config.nodes) if config else []
+    if task.use_llm_refine and "summary" in node_list and "output" in node_list and "llm_refine" not in node_list:
+        node_list.insert(node_list.index("output"), "llm_refine")
     
     # 构建节点状态列表
     node_statuses = []
