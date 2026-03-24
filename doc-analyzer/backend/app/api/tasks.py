@@ -179,13 +179,37 @@ async def list_tasks(
     query = db.query(Task)
     if status:
         query = query.filter(Task.status == status)
-    
+
     total = query.count()
     tasks = query.order_by(Task.created_at.desc()).offset(skip).limit(limit).all()
-    
+
+    # 为每个任务添加节点状态
+    import json
+    result_items = []
+    for task in tasks:
+        task_dict = task.to_dict()
+
+        # 获取节点状态
+        nodes = db.query(NodeData).filter(NodeData.task_id == task.task_id).all()
+        config = db.query(NodeConfig).filter(
+            NodeConfig.config_name == task.config_name
+        ).first()
+
+        node_list = json.loads(config.nodes) if config else []
+        node_statuses = []
+        for node_name in node_list:
+            node = next((n for n in nodes if n.node_name == node_name), None)
+            node_statuses.append({
+                "name": node_name,
+                "status": node.status if node else "pending"
+            })
+
+        task_dict["nodes"] = node_statuses
+        result_items.append(task_dict)
+
     return {
         "total": total,
-        "items": [task.to_dict() for task in tasks]
+        "items": result_items
     }
 
 
