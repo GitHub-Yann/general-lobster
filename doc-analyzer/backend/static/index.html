@@ -381,10 +381,11 @@
                     loading.value = true;
                     try {
                         const response = await axios.get(`${API_BASE}/api/tasks?limit=20`);
-                        tasks.value = response.data.items;
+                        console.log('获取任务列表:', response.data);
+                        tasks.value = response.data.items || [];
                     } catch (error) {
                         ElMessage.error('获取任务列表失败');
-                        console.error(error);
+                        console.error('获取任务列表失败:', error);
                     } finally {
                         loading.value = false;
                     }
@@ -412,10 +413,13 @@
 
                 // 上传成功
                 const handleUploadSuccess = (response) => {
+                    console.log('上传成功:', response);
                     ElMessage.success('任务创建成功');
-                    fetchTasks();
-                    // 开始轮询任务状态
-                    startPolling(response.task_id);
+                    // 延迟一下再刷新，确保数据库已写入
+                    setTimeout(() => {
+                        fetchTasks();
+                        startPolling(response.task_id);
+                    }, 500);
                 };
 
                 // 上传失败
@@ -538,7 +542,10 @@
                             if (task.status === 'completed' || task.status === 'failed') {
                                 clearInterval(pollingIntervals[taskId]);
                                 delete pollingIntervals[taskId];
-
+                                
+                                // 刷新整个列表以获取最新状态
+                                fetchTasks();
+                                
                                 if (task.status === 'completed') {
                                     ElMessage.success('任务处理完成');
                                 }
