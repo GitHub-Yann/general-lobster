@@ -334,3 +334,33 @@ async def delete_task(task_id: str, db: Session = Depends(get_db)):
         "task_id": task_id,
         "message": "任务删除成功"
     }
+
+
+@router.get("/{task_id}/result", response_model=TaskResult)
+async def get_task_result(task_id: str, db: Session = Depends(get_db)):
+    """
+    获取任务分析结果
+    """
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务不存在"
+        )
+    
+    if task.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"任务尚未完成，当前状态: {task.status}"
+        )
+    
+    import json
+    result_data = json.loads(task.result_data) if task.result_data else {}
+    
+    return {
+        "task_id": task_id,
+        "keywords": result_data.get("keywords", []),
+        "summary": result_data.get("summary", ""),
+        "full_text": result_data.get("full_text", ""),
+        "completed_at": task.completed_at.isoformat() if task.completed_at else None
+    }
