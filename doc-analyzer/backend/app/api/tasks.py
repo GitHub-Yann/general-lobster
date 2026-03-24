@@ -280,10 +280,10 @@ async def retry_task(
     }
 
 
-@router.get("/{task_id}/result", response_model=TaskResult)
-async def get_task_result(task_id: str, db: Session = Depends(get_db)):
+@router.delete("/{task_id}")
+async def delete_task(task_id: str, db: Session = Depends(get_db)):
     """
-    获取任务分析结果
+    删除任务
     """
     task = db.query(Task).filter(Task.task_id == task_id).first()
     if not task:
@@ -292,19 +292,21 @@ async def get_task_result(task_id: str, db: Session = Depends(get_db)):
             detail="任务不存在"
         )
     
-    if task.status != "completed":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"任务尚未完成，当前状态: {task.status}"
-        )
+    # 删除关联的节点数据
+    db.query(NodeData).filter(NodeData.task_id == task_id).delete()
     
-    import json
-    result_data = json.loads(task.result_data) if task.result_data else {}
+    # 删除上传的文件（如果不是 URL 类型）
+    if task.file_type != 'url' and task.file_path and os.path.exists(task.file_path):
+        try:
+            os.remove(task.file_path)
+        except Exception as e:
+            print(f"删除文件失败: {task.file_path}, 错误: {e}")
+    
+    # 删除任务记录
+    db.delete(task)
+    db.commit()
     
     return {
         "task_id": task_id,
-        "keywords": result_data.get("keywords", []),
-        "summary": result_data.get("summary", ""),
-        "full_text": result_data.get("full_text", ""),
-        "completed_at": task.completed_at.isoformat() if task.completed_at else None
+        "message": "任务删除成功"
     }

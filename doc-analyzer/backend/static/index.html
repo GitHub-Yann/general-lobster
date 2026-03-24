@@ -46,7 +46,7 @@
         .upload-area {
             border: 2px dashed #dcdfe6;
             border-radius: 8px;
-            padding: 60px 20px;
+            padding: 30px 20px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s;
@@ -56,9 +56,9 @@
             background: #f5f7fa;
         }
         .upload-icon {
-            font-size: 48px;
+            font-size: 32px;
             color: #c0c4cc;
-            margin-bottom: 16px;
+            margin-bottom: 8px;
         }
         .upload-text {
             color: #606266;
@@ -187,7 +187,7 @@
         <div class="app-container">
             <!-- 头部 -->
             <div class="header">
-                <h1>🦐 Doc Analyzer</h1>
+                <h1>Doc Analyzer</h1>
                 <p>智能文档分析系统 - 提取关键词与核心内容</p>
             </div>
 
@@ -293,6 +293,14 @@
                             >
                                 重试
                             </el-button>
+                            <el-button 
+                                type="danger" 
+                                size="small"
+                                @click="deleteTask(task.task_id)"
+                                :loading="deleteLoading === task.task_id"
+                            >
+                                删除
+                            </el-button>
                         </div>
 
                         <!-- 结果展示 -->
@@ -334,6 +342,8 @@
                 const urlLoading = ref(false);
                 const retryLoading = ref('');
                 const results = ref({});
+
+                const deleteLoading = ref('');
 
                 // 状态文本映射
                 const statusText = (status) => {
@@ -470,7 +480,44 @@
                     }
                 };
 
-                // 轮询任务状态
+                // 删除任务
+                const deleteTask = async (taskId) => {
+                    try {
+                        await ElMessageBox.confirm('确定要删除这个任务吗？', '确认删除', {
+                            confirmButtonText: '删除',
+                            cancelButtonText: '取消',
+                            type: 'warning'
+                        });
+                        
+                        deleteLoading.value = taskId;
+                        await axios.delete(`${API_BASE}/api/tasks/${taskId}`);
+                        
+                        // 停止轮询
+                        if (pollingIntervals[taskId]) {
+                            clearInterval(pollingIntervals[taskId]);
+                            delete pollingIntervals[taskId];
+                        }
+                        
+                        // 从列表中移除
+                        const index = tasks.value.findIndex(t => t.task_id === taskId);
+                        if (index !== -1) {
+                            tasks.value.splice(index, 1);
+                        }
+                        
+                        // 清除结果缓存
+                        if (results.value[taskId]) {
+                            delete results.value[taskId];
+                        }
+                        
+                        ElMessage.success('任务已删除');
+                    } catch (error) {
+                        if (error !== 'cancel') {
+                            ElMessage.error('删除失败: ' + (error.response?.data?.detail || error.message));
+                        }
+                    } finally {
+                        deleteLoading.value = '';
+                    }
+                };
                 let pollingIntervals = {};
                 
                 const startPolling = (taskId) => {
@@ -512,8 +559,7 @@
                     loading,
                     urlInput,
                     urlLoading,
-                    retryLoading,
-                    results,
+                    deleteLoading,
                     statusText,
                     nodeName,
                     formatTime,
@@ -523,7 +569,8 @@
                     handleUploadError,
                     submitUrl,
                     viewResult,
-                    retryTask
+                    retryTask,
+                    deleteTask
                 };
             }
         }).use(ElementPlus).mount('#app');
