@@ -7,6 +7,9 @@ import re
 import requests
 from typing import Dict, Any
 from bs4 import BeautifulSoup
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def parse_document(file_path: str, file_type: str) -> Dict[str, Any]:
@@ -144,40 +147,70 @@ def _parse_txt(file_path: str) -> Dict[str, Any]:
 def _parse_url(url: str) -> Dict[str, Any]:
     """解析网页 URL"""
     try:
+        logger.info(f"[parse_url] start url={url}")
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
+        logger.info(
+            f"[parse_url] fetched status={response.status_code}, final_url={response.url}, content_type={response.headers.get('Content-Type', '')}"
+        )
         
         # 自动检测编码
         response.encoding = response.apparent_encoding
         
         soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # 移除脚本和样式
+
+        # 获取标题（多级回退）
+        title = ""
+        title_source = "none"
+        if soup.title:
+            t = soup.title.get_text(strip=True)
+            if t:
+                title = t
+                title_source = "html_title"
+        if not title:
+            og = soup.find("meta", attrs={"property": "og:title"})
+            if og and og.get("content"):
+                title = og.get("content").strip()
+                title_source = "og:title"
+        if not title:
+            tw = soup.find("meta", attrs={"name": "twitter:title"})
+            if tw and tw.get("content"):
+                title = tw.get("content").strip()
+                title_source = "twitter:title"
+        if not title:
+            h1 = soup.find("h1")
+            if h1:
+                t = h1.get_text(strip=True)
+                if t:
+                    title = t
+                    title_source = "h1"
+
+        logger.info(f"[parse_url] title_source={title_source}, title={title[:120] if title else ''}")
+
+        # 移除脚本和样式（正文抽取前处理）
         for script in soup(["script", "style", "nav", "footer", "header"]):
             script.decompose()
-        
-        # 获取标题
-        title = ""
-        if soup.title:
-            title = soup.title.string.strip() if soup.title.string else ""
         
         # 获取正文
         # 优先查找 article 或 main 标签
         article = soup.find('article') or soup.find('main')
         if article:
             text = article.get_text(separator='\n', strip=True)
+            content_source = "article/main"
         else:
             # 查找内容最多的 div
             paragraphs = soup.find_all('p')
             text_parts = [p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20]
             text = '\n'.join(text_parts)
+            content_source = "paragraphs"
         
         # 清理多余空白
         text = re.sub(r'\n+', '\n', text)
         text = re.sub(r' +', ' ', text)
+        logger.info(f"[parse_url] content_source={content_source}, text_len={len(text)}")
         
         return {
             "text": text,
@@ -187,4 +220,8 @@ def _parse_url(url: str) -> Dict[str, Any]:
         }
         
     except requests.RequestException as e:
+        logger.error(f"[parse_url] request failed url={url}, error={e}")
         raise ValueError(f"请求失败: {str(e)}")
+    except Exception as e:
+        logger.error(f"[parse_url] parse failed url={url}, error={e}")
+        raise

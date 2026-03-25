@@ -371,6 +371,10 @@ def execute_upload_node(db, task_id: str, context: dict) -> dict:
 
 def execute_parse_node(db, task_id: str, context: dict) -> dict:
     """解析节点"""
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    if not task:
+        raise ValueError("任务不存在")
+
     upload_output = context.get("upload", {})
     file_path = upload_output.get("file_path")
     file_type = upload_output.get("file_type")
@@ -380,6 +384,12 @@ def execute_parse_node(db, task_id: str, context: dict) -> dict:
 
     try:
         result = parse_document(file_path, file_type)
+        # URL 任务：解析出网页标题后回写到 tasks.filename，便于后续列表展示与检索
+        if task.file_type == "url":
+            title = (result.get("title") or "").strip()
+            if title:
+                task.filename = title[:255]
+                db.commit()
         return result
     except Exception as e:
         raise ValueError(f"文档解析失败: {str(e)}")

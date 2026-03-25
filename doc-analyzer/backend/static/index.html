@@ -302,6 +302,27 @@
                         </div>
 
                         <div class="keyword-config">
+                            <div class="config-title">⚙️ 流程配置（必选）</div>
+                            <el-form label-position="top">
+                                <el-form-item label="节点流程">
+                                    <el-select
+                                        v-model="selectedConfigName"
+                                        placeholder="请选择流程配置"
+                                        style="width: 100%;"
+                                    >
+                                        <el-option
+                                            v-for="cfg in taskConfigs"
+                                            :key="cfg.config_name"
+                                            :label="`${cfg.config_name}${cfg.description ? ' - ' + cfg.description : ''}`"
+                                            :value="cfg.config_name"
+                                        />
+                                    </el-select>
+                                    <div class="config-hint">来自 node_configs 表，可按场景选择不同节点链路</div>
+                                </el-form-item>
+                            </el-form>
+                        </div>
+
+                        <div class="keyword-config">
                             <div class="config-title">🎯 关键词提取配置（可选）</div>
                             <el-form label-position="top">
                                 <el-form-item label="领域关键词">
@@ -605,6 +626,8 @@
                 const selectedPromptTemplateId = ref(null);
                 const llmConfigs = ref([]);
                 const promptTemplates = ref([]);
+                const taskConfigs = ref([]);
+                const selectedConfigName = ref('default');
                 const llmForm = ref({
                     name: '',
                     provider: '',
@@ -695,6 +718,19 @@
                         promptTemplates.value = response.data.items || [];
                     } catch (error) {
                         console.error('获取Prompt模板失败', error);
+                    }
+                };
+
+                const fetchTaskConfigs = async () => {
+                    try {
+                        const response = await axios.get(`${API_BASE}/api/tasks/configs`);
+                        taskConfigs.value = response.data.items || [];
+                        const names = taskConfigs.value.map(i => i.config_name);
+                        if (!names.includes(selectedConfigName.value)) {
+                            selectedConfigName.value = names.includes('default') ? 'default' : (names[0] || 'default');
+                        }
+                    } catch (error) {
+                        console.error('获取任务配置失败', error);
                     }
                 };
 
@@ -872,6 +908,7 @@
                         if (noiseWords.value.trim()) {
                             formData.append('noise_words', noiseWords.value.trim());
                         }
+                        formData.append('config_name', selectedConfigName.value || 'default');
                         formData.append('use_llm_refine', useLlmRefine.value ? 'true' : 'false');
                         if (selectedLlmConfigId.value) {
                             formData.append('llm_config_id', String(selectedLlmConfigId.value));
@@ -899,6 +936,7 @@
                         useLlmRefine.value = false;
                         selectedLlmConfigId.value = null;
                         selectedPromptTemplateId.value = null;
+                        selectedConfigName.value = 'default';
                         activeCreateTab.value = 'create';
                         
                         // 刷新列表并开始轮询
@@ -1061,6 +1099,7 @@
                 // 页面加载时获取任务列表
                 onMounted(() => {
                     fetchTasks();
+                    fetchTaskConfigs();
                     fetchLlmConfigs();
                     fetchPromptTemplates();
                 });
@@ -1085,6 +1124,8 @@
                     selectedPromptTemplateId,
                     llmConfigs,
                     promptTemplates,
+                    taskConfigs,
+                    selectedConfigName,
                     llmForm,
                     promptForm,
                     submitLoading,

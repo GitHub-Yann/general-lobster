@@ -63,6 +63,18 @@ def get_file_type(filename: str) -> str:
     return 'unknown'
 
 
+@router.get("/configs")
+async def list_task_configs(db: Session = Depends(get_db)):
+    """
+    获取可用节点配置列表
+    """
+    init_default_configs(db)
+    configs = db.query(NodeConfig).order_by(NodeConfig.config_name.asc()).all()
+    return {
+        "items": [c.to_dict() for c in configs]
+    }
+
+
 @router.post("/url", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_url_task(
     url: str = Form(...),
