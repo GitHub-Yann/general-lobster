@@ -364,9 +364,22 @@
                                 </el-form-item>
                             </el-form>
                         </div>
+
+                        <!-- 提交按钮 -->
+                        <div class="submit-area">
+                            <el-button 
+                                type="primary" 
+                                size="large"
+                                @click="submitTask"
+                                :loading="submitLoading"
+                                :disabled="!canSubmit"
+                            >
+                                开始分析
+                            </el-button>
+                        </div>
                     </el-tab-pane>
 
-                    <el-tab-pane label="配置" name="config">
+                    <el-tab-pane label="LLM提供商配置" name="llm_config">
                         <div class="config-panel">
                             <div class="config-title">🔌 LLM 提供商配置（落库）</div>
                             <el-form label-position="top">
@@ -374,11 +387,10 @@
                                     <el-input v-model="llmForm.name" placeholder="如：OpenAI-Prod"></el-input>
                                 </el-form-item>
                                 <el-form-item label="提供商">
-                                    <el-select v-model="llmForm.provider" style="width: 100%;" placeholder="选择提供商">
-                                        <el-option label="openai" value="openai"></el-option>
-                                        <el-option label="claude" value="claude"></el-option>
-                                        <el-option label="wenxin" value="wenxin"></el-option>
-                                    </el-select>
+                                    <el-input
+                                        v-model="llmForm.provider"
+                                        placeholder="如：openai / claude / wenxin / 其他自定义名称"
+                                    ></el-input>
                                 </el-form-item>
                                 <el-form-item label="API Base">
                                     <el-input v-model="llmForm.api_base" placeholder="如：https://api.openai.com/v1"></el-input>
@@ -401,6 +413,23 @@
                             <div class="tab-tip">配置会保存到数据库，任务可在“新建分析任务”中选择使用。</div>
                         </div>
 
+                        <div class="config-panel">
+                            <div class="config-title">📚 已保存 LLM 配置</div>
+                            <div v-if="llmConfigs.length === 0" class="tab-tip">暂无 LLM 配置</div>
+                            <div v-for="cfg in llmConfigs" :key="`cfg-${cfg.id}`" class="file-selected" style="margin-top: 8px;">
+                                <div>
+                                    <div class="filename">{{ cfg.name }} ({{ cfg.provider }}{{ cfg.model ? '/' + cfg.model : '' }})</div>
+                                    <div class="tab-tip">{{ cfg.api_base || '未配置 api_base' }}</div>
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <el-switch :model-value="cfg.enabled" @change="toggleLlmConfigEnabled(cfg, $event)"></el-switch>
+                                    <el-button size="small" type="danger" @click="deleteLlmConfig(cfg.id)">删除</el-button>
+                                </div>
+                            </div>
+                        </div>
+                    </el-tab-pane>
+
+                    <el-tab-pane label="Prompt模板配置" name="prompt_config">
                         <div class="config-panel llm-config">
                             <div class="config-title">🧾 Prompt 模板配置（落库）</div>
                             <el-form label-position="top">
@@ -435,21 +464,7 @@
                         </div>
 
                         <div class="config-panel">
-                            <div class="config-title">📚 已保存配置</div>
-                            <div style="margin-bottom: 8px; color: #909399; font-size: 12px;">LLM 配置</div>
-                            <div v-if="llmConfigs.length === 0" class="tab-tip">暂无 LLM 配置</div>
-                            <div v-for="cfg in llmConfigs" :key="`cfg-${cfg.id}`" class="file-selected" style="margin-top: 8px;">
-                                <div>
-                                    <div class="filename">{{ cfg.name }} ({{ cfg.provider }}{{ cfg.model ? '/' + cfg.model : '' }})</div>
-                                    <div class="tab-tip">{{ cfg.api_base || '未配置 api_base' }}</div>
-                                </div>
-                                <div style="display: flex; gap: 8px; align-items: center;">
-                                    <el-switch :model-value="cfg.enabled" @change="toggleLlmConfigEnabled(cfg, $event)"></el-switch>
-                                    <el-button size="small" type="danger" @click="deleteLlmConfig(cfg.id)">删除</el-button>
-                                </div>
-                            </div>
-
-                            <div style="margin: 14px 0 8px; color: #909399; font-size: 12px;">Prompt 模板</div>
+                            <div class="config-title">📚 已保存 Prompt 模板</div>
                             <div v-if="promptTemplates.length === 0" class="tab-tip">暂无 Prompt 模板</div>
                             <div v-for="tpl in promptTemplates" :key="`tpl-${tpl.id}`" class="file-selected" style="margin-top: 8px;">
                                 <div>
@@ -463,19 +478,6 @@
                         </div>
                     </el-tab-pane>
                 </el-tabs>
-
-                <!-- 提交按钮 -->
-                <div class="submit-area">
-                    <el-button 
-                        type="primary" 
-                        size="large"
-                        @click="submitTask"
-                        :loading="submitLoading"
-                        :disabled="!canSubmit"
-                    >
-                        开始分析
-                    </el-button>
-                </div>
             </el-card>
 
             <!-- 任务列表 -->
