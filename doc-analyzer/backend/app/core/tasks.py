@@ -284,7 +284,8 @@ def _execute_node_internal(db, task_id: str, node_name: str, context: dict) -> d
     # 更新为运行中
     node_data.status = "running"
     node_data.started_at = datetime.utcnow()
-    node_data.input_data = json.dumps(context, ensure_ascii=False, default=str)
+    # 减少冗余存储：节点运行依赖内存 context 传递，input_data 不落库
+    node_data.input_data = None
     db.commit()
     logger.info(f"[Task {task_id}] 节点 [{node_name}] 开始执行...")
 
