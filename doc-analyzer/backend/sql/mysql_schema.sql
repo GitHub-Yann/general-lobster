@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS `tasks` (
   `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'pending, running, completed, failed',
   `current_node` VARCHAR(50) NOT NULL DEFAULT 'upload',
   `result_data` LONGTEXT NULL COMMENT '最终结果 JSON',
+  `keywords_data` LONGTEXT NULL COMMENT '关键词结果 JSON（便于快速查询）',
+  `summary_text` LONGTEXT NULL COMMENT '摘要文本（便于快速查询）',
   `domain_keywords` LONGTEXT NULL COMMENT '用户输入领域词（原始字符串或JSON）',
   `noise_words` LONGTEXT NULL COMMENT '用户输入噪音词（原始字符串或JSON）',
   -- LLM 精修扩展（可选）
@@ -192,3 +194,17 @@ ON DUPLICATE KEY UPDATE
   `description` = VALUES(`description`);
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- =========================================================
+-- 9) 初始化默认 LLM 配置（幂等）
+-- =========================================================
+INSERT INTO llm_configs
+(id, provider, name, api_key, api_base, model, enabled, config, created_at, updated_at)
+VALUES(2, 'bailian', 'Qwen-plus', 'C6A63CC26CE78FB429BF3EC485140709FBEC67095847ADBA393B2EC604F317C78644D1B5B1F7646E7DE78C6433DBB0B1279EDF6D3AC6634C617A30D3F8167F86623F74E2327F91B199DB69A053C56F2EE34E14874B0C280BF3C6A7406DDDEBDB6E5D2A1CF7E839EDCFE0F847145013A85D5A4F43787A30BC0B3F495282CD9FC8AE725DF8BF2DE605D865058AAAD492AFA9CDB26798D1FF869D94B8ECA52E6C3A6FF27ACEBAE630D9AB0DF4BD217282B8EA190E2EF0F7E9E0EA973182E8821F24', 'https://ai-gateway.gaiaworks.net/testdevops/v1/chat/completions', 'qwen-plus', 1, NULL, '2026-03-25 01:01:31', '2026-03-25 01:01:31');
+
+INSERT INTO doc_analyzer.llm_prompt_templates
+(id, name, scene, version, system_prompt, user_prompt_template, enabled, created_at, updated_at)
+VALUES(2, 'doc-refine-default', 'doc_refine', 'v1', '你是文档分析助手。你只能基于给定内容重写，不得编造事实。输出严格JSON：{"keywords":[{"word":"关键词","weight":0.00}],"summary":"摘要"}。关键词数量不超过15，摘要应是简介风格，语言简洁准确。', '请根据以下输入进行重写整合，保留关键术语并避免新增事实：\n{payload}', 1, '2026-03-25 07:57:02', '2026-03-25 07:57:02');
+
+
+

@@ -380,11 +380,20 @@ async def get_task_result(task_id: str, db: Session = Depends(get_db)):
     
     import json
     result_data = json.loads(task.result_data) if task.result_data else {}
+    keywords = []
+    if task.keywords_data:
+        try:
+            keywords = json.loads(task.keywords_data)
+        except Exception:
+            keywords = result_data.get("keywords", [])
+    else:
+        keywords = result_data.get("keywords", [])
+    summary = task.summary_text if task.summary_text else result_data.get("summary", "")
     
     return {
         "task_id": task_id,
-        "keywords": result_data.get("keywords", []),
-        "summary": result_data.get("summary", ""),
+        "keywords": keywords,
+        "summary": summary,
         "full_text": result_data.get("full_text", ""),
         "completed_at": task.completed_at.isoformat() if task.completed_at else None
     }

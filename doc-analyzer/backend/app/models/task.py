@@ -22,6 +22,8 @@ class Task(Base):
     status = Column(String(20), default="pending")  # pending, running, completed, failed
     current_node = Column(String(50), default="upload")
     result_data = Column(Text)  # JSON 格式存储最终结果
+    keywords_data = Column(Text)  # 关键词结果 JSON（便于快速读取）
+    summary_text = Column(Text)  # 摘要文本（便于快速读取）
     # 用户自定义关键词配置
     domain_keywords = Column(Text)  # JSON 格式存储领域关键词列表
     noise_words = Column(Text)  # JSON 格式存储噪音词列表
@@ -42,6 +44,8 @@ class Task(Base):
             "status": self.status,
             "current_node": self.current_node,
             "result_data": self.result_data,
+            "keywords_data": self.keywords_data,
+            "summary_text": self.summary_text,
             "domain_keywords": self.domain_keywords,
             "noise_words": self.noise_words,
             "use_llm_refine": self.use_llm_refine,

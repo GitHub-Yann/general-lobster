@@ -177,6 +177,9 @@ def process_task(self, task_id: str, start_from_node: str = None):
         # 保存最终结果
         final_result = context.get("output", {})
         task.result_data = json.dumps(final_result, ensure_ascii=False)
+        # 高频查询字段拆分存储，避免每次解析 result_data
+        task.keywords_data = json.dumps(final_result.get("keywords", []), ensure_ascii=False)
+        task.summary_text = final_result.get("summary", "")
 
         db.commit()
 

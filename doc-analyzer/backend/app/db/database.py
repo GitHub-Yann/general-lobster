@@ -66,6 +66,10 @@ def _run_lightweight_migrations():
         statements.append("ALTER TABLE tasks ADD COLUMN llm_config_id INTEGER")
     if "prompt_template_id" not in existing_cols:
         statements.append("ALTER TABLE tasks ADD COLUMN prompt_template_id INTEGER")
+    if "keywords_data" not in existing_cols:
+        statements.append("ALTER TABLE tasks ADD COLUMN keywords_data TEXT")
+    if "summary_text" not in existing_cols:
+        statements.append("ALTER TABLE tasks ADD COLUMN summary_text TEXT")
 
     if not statements:
         return
