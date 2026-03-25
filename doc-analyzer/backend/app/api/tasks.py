@@ -3,8 +3,9 @@
 """
 import os
 import uuid
+import json
 from typing import List, Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Body
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -408,4 +409,57 @@ async def get_task_result(task_id: str, db: Session = Depends(get_db)):
         "summary": summary,
         "full_text": result_data.get("full_text", ""),
         "completed_at": task.completed_at.isoformat() if task.completed_at else None
+    }
+
+
+@router.put("/{task_id}/result")
+async def update_task_result(
+    task_id: str,
+    keywords: Optional[List[dict]] = Body(None),
+    summary: Optional[str] = Body(None),
+    db: Session = Depends(get_db)
+):
+    """
+    手动编辑任务结果（仅更新 tasks.keywords_data / tasks.summary_text）
+    """
+    task = db.query(Task).filter(Task.task_id == task_id).first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务不存在"
+        )
+
+    if task.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="仅已完成任务可编辑结果"
+        )
+
+    # 关键词清洗与校验
+    cleaned_keywords = []
+    if keywords is not None:
+        for item in keywords:
+            if not isinstance(item, dict):
+                continue
+            word = str(item.get("word", "")).strip()
+            if not word:
+                continue
+            try:
+                weight = float(item.get("weight", 0.5))
+            except Exception:
+                weight = 0.5
+            weight = max(0.0, min(1.0, weight))
+            cleaned_keywords.append({"word": word, "weight": round(weight, 4)})
+
+    if summary is not None:
+        task.summary_text = str(summary).strip()
+    if keywords is not None:
+        task.keywords_data = json.dumps(cleaned_keywords, ensure_ascii=False)
+
+    db.commit()
+    return {
+        "task_id": task_id,
+        "message": "结果已更新",
+        "keywords_count": len(cleaned_keywords) if keywords is not None else None,
+        "summary_length": len(task.summary_text or "") if summary is not None else None
     }
