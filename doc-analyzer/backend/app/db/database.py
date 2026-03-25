@@ -47,7 +47,7 @@ def get_db():
 
 def init_db():
     """初始化数据库表"""
-    from app.models import task, node_data, node_config, llm_config, llm_prompt_template
+    from app.models import task, node_data, node_config, llm_config, llm_prompt_template, llm_call_log
     Base.metadata.create_all(bind=engine)
     _run_lightweight_migrations()
 

@@ -1,19 +1,19 @@
 """
-LLM 服务接口
-支持在抽取结果基础上进行可控重写整合
+LLM 服务接口（统一 OpenAI 兼容调用）
 """
 import json
 import re
 from typing import Dict, List, Optional, Any
 from abc import ABC, abstractmethod
+import logging
 
 import requests
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = (
     "你是文档分析助手。你只能基于给定内容重写，不得编造事实。"
-    "请输出严格 JSON："
-    "{\"keywords\":[{\"word\":\"关键词\",\"weight\":0.0}],\"summary\":\"摘要\"}。"
+    "输出严格JSON：{\"keywords\":[{\"word\":\"关键词\",\"weight\":0.00}],\"summary\":\"摘要\"}。"
     "关键词数量不超过15，摘要应是简介风格，语言简洁准确。"
 )
 
@@ -89,9 +89,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         if not self.api_base:
             raise ValueError("api_base 不能为空（OpenAI兼容接口需要）")
 
-        url = self.api_base.rstrip("/")
-        if not url.endswith("/chat/completions"):
-            url += "/chat/completions"
+        # 按需求：调用地址使用配置值原样，不做拼接
+        url = self.api_base.strip()
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -107,53 +106,16 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "response_format": {"type": "json_object"}
         }
         resp = requests.post(url, headers=headers, json=body, timeout=timeout)
+        logger.info(f"[LLM] POST {url} -> HTTP {resp.status_code}")
+        if not resp.ok:
+            logger.warning(f"[LLM] response body (first 500 chars): {resp.text[:500]}")
         resp.raise_for_status()
         data = resp.json()
         return data["choices"][0]["message"]["content"]
 
 
-class ClaudeProvider(BaseLLMProvider):
-    """Anthropic Claude 原生接口"""
-
-    def chat(self, system_prompt: str, user_prompt: str, timeout: int = 60) -> str:
-        base = self.api_base or "https://api.anthropic.com"
-        url = base.rstrip("/") + "/v1/messages"
-        headers = {
-            "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": self.model or "claude-3-5-sonnet-20241022",
-            "max_tokens": 1200,
-            "temperature": 0.2,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_prompt}],
-        }
-        resp = requests.post(url, headers=headers, json=body, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        content = data.get("content", [])
-        if isinstance(content, list) and content:
-            text_part = content[0]
-            if isinstance(text_part, dict):
-                return str(text_part.get("text", ""))
-        return ""
-
-
-class WenxinProvider(OpenAICompatibleProvider):
-    """文心一言（使用兼容接口）"""
-    pass
-
-
 class LLMService:
-    """LLM 服务管理"""
-
-    PROVIDERS = {
-        "openai": OpenAICompatibleProvider,
-        "claude": ClaudeProvider,
-        "wenxin": WenxinProvider,
-    }
+    """LLM 服务管理（统一走 OpenAICompatibleProvider）"""
 
     @classmethod
     def get_provider(
@@ -163,14 +125,13 @@ class LLMService:
         api_base: Optional[str] = None,
         model: Optional[str] = None
     ) -> Optional[BaseLLMProvider]:
-        provider_class = cls.PROVIDERS.get((provider_name or "").lower())
-        if provider_class:
-            return provider_class(api_key, api_base, model)
-        return None
+        # 按需求：不根据 provider_name 分发，统一使用 OpenAI 兼容调用
+        return OpenAICompatibleProvider(api_key, api_base, model)
 
     @classmethod
     def list_providers(cls) -> List[str]:
-        return list(cls.PROVIDERS.keys())
+        # 仅作为展示用途
+        return ["openai_compatible"]
 
     @classmethod
     def refine_keywords_and_summary(

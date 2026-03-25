@@ -38,19 +38,24 @@ async def create_llm_config(
     provider: str,
     name: str,
     api_key: str,
-    api_base: Optional[str] = None,
-    model: Optional[str] = None,
+    api_base: str,
+    model: str,
     enabled: bool = False,
     db: Session = Depends(get_db)
 ):
     """创建 LLM 配置"""
-    # 验证提供商
-    if provider not in LLMService.list_providers():
+    # 必填校验
+    provider = (provider or "").strip()
+    name = (name or "").strip()
+    api_key = (api_key or "").strip()
+    api_base = (api_base or "").strip()
+    model = (model or "").strip()
+    if not provider or not name or not api_key or not api_base or not model:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的提供商: {provider}"
+            detail="LLM 配置字段均为必填：provider/name/api_base/model/api_key"
         )
-    
+
     # 检查名称是否已存在
     existing = db.query(LLMConfig).filter(LLMConfig.name == name).first()
     if existing:

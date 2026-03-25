@@ -47,6 +47,21 @@ celery_app.conf.update(
     # Windows 兼容配置
     broker_connection_retry_on_startup=True,
     worker_concurrency=1,
+    # Redis 连接稳定性配置（LLM 场景下任务更长，适当放宽超时并启用保活）
+    broker_transport_options={
+        "socket_connect_timeout": 30,
+        "socket_timeout": 30,
+        "socket_keepalive": True,
+        "retry_on_timeout": True,
+        "health_check_interval": 30,
+    },
+    result_backend_transport_options={
+        "socket_connect_timeout": 30,
+        "socket_timeout": 30,
+        "socket_keepalive": True,
+        "retry_on_timeout": True,
+        "health_check_interval": 30,
+    },
 )
 
 from app.db.database import SessionLocal
@@ -55,6 +70,7 @@ from app.models.node_data import NodeData
 from app.models.node_config import NodeConfig
 from app.models.llm_config import LLMConfig
 from app.models.llm_prompt_template import LLMPromptTemplate
+from app.models.llm_call_log import LLMCallLog
 
 from app.nodes.parse_node import parse_document
 from app.nodes.segment_node import segment_text
@@ -624,6 +640,11 @@ def execute_llm_refine(db, task_id: str, context: dict) -> dict:
         noise_words=_parse_user_terms(task.noise_words),
     )
 
+    logger.info(f"[Task {task_id}] LLM payload==============>: {payload}")
+
+    call_started = datetime.utcnow()
+    request_payload_text = json.dumps(payload, ensure_ascii=False)
+    prompt_template_id = prompt_template.id if prompt_template else None
     try:
         llm_result = LLMService.refine_keywords_and_summary(
             provider_name=llm_config.provider,
@@ -635,7 +656,36 @@ def execute_llm_refine(db, task_id: str, context: dict) -> dict:
             user_prompt_template=user_template,
             timeout=60
         )
+        latency_ms = int((datetime.utcnow() - call_started).total_seconds() * 1000)
+
+        logger.info(f"[Task {task_id}] LLM result==============>: {llm_result}")
+        
+        _save_llm_call_log(
+            db=db,
+            task_id=task_id,
+            provider=llm_config.provider,
+            model=llm_config.model,
+            prompt_template_id=prompt_template_id,
+            request_payload=request_payload_text,
+            response_payload=json.dumps(llm_result, ensure_ascii=False),
+            success=True,
+            error_message=None,
+            latency_ms=latency_ms,
+        )
     except Exception as e:
+        latency_ms = int((datetime.utcnow() - call_started).total_seconds() * 1000)
+        _save_llm_call_log(
+            db=db,
+            task_id=task_id,
+            provider=llm_config.provider,
+            model=llm_config.model,
+            prompt_template_id=prompt_template_id,
+            request_payload=request_payload_text,
+            response_payload=None,
+            success=False,
+            error_message=str(e),
+            latency_ms=latency_ms,
+        )
         logger.warning(f"[Task {task_id}] LLM 精修失败，回退抽取版: {e}")
         return {"used": False, "reason": f"llm_call_failed: {str(e)}"}
 
@@ -725,12 +775,77 @@ def _guard_llm_result(llm_result: dict, keyword_output: dict, summary_output: di
     if not isinstance(keywords, list) or len(keywords) == 0:
         return {"passed": False, "reason": "empty_keywords"}
 
-    # 术语保留率：原 Top10 至少命中 40%
+    # 术语保留率：原 Top10 在「摘要 + LLM关键词」联合文本中至少命中 30%
+    # 说明：只看 summary 会误杀（LLM 可能把术语放在 keywords 而非摘要正文）
     old_words = [k.get("word", "") for k in keyword_output.get("keywords", []) if isinstance(k, dict)][:10]
     old_words = [w for w in old_words if w]
     if old_words:
-        hits = sum(1 for w in old_words if w in summary)
-        if hits / len(old_words) < 0.4:
-            return {"passed": False, "reason": "term_recall_low"}
+        llm_words = []
+        for item in keywords:
+            if isinstance(item, dict):
+                word = str(item.get("word", "")).strip()
+            else:
+                word = str(item).strip()
+            if word:
+                llm_words.append(word)
+
+        merged_text = summary + " " + " ".join(llm_words)
+
+        def _norm(s: str) -> str:
+            return re.sub(r"[\s\-_，,。；;：:（）()\[\]【】]", "", (s or "").lower())
+
+        merged_norm = _norm(merged_text)
+        hits = 0
+        hit_words = []
+        miss_words = []
+        for w in old_words:
+            wn = _norm(w)
+            matched = False
+            if wn and wn in merged_norm:
+                matched = True
+            # 弱匹配：短语差异时允许包含关系（长度>=3才启用）
+            if not matched and len(wn) >= 3:
+                for lw in llm_words:
+                    lwn = _norm(lw)
+                    if not lwn:
+                        continue
+                    if wn in lwn or lwn in wn:
+                        matched = True
+                        break
+            if matched:
+                hits += 1
+                hit_words.append(w)
+            else:
+                miss_words.append(w)
+
+        recall = hits / len(old_words)
+        logger.info(
+            f"[LLM Guard] term recall={recall:.2f}, hits={hit_words}, miss={miss_words}"
+        )
+        if recall < 0.3:
+            return {"passed": False, "reason": f"term_recall_low({hits}/{len(old_words)})"}
 
     return {"passed": True, "reason": "ok"}
+
+
+def _save_llm_call_log(db, task_id: str, provider: str, model: str, prompt_template_id: int,
+                       request_payload: str, response_payload: str, success: bool,
+                       error_message: str, latency_ms: int):
+    """记录 LLM 调用日志（失败不影响主流程）。"""
+    try:
+        row = LLMCallLog(
+            task_id=task_id,
+            provider=provider or "",
+            model=model,
+            prompt_template_id=prompt_template_id,
+            request_payload=request_payload,
+            response_payload=response_payload,
+            success=bool(success),
+            error_message=error_message,
+            latency_ms=latency_ms
+        )
+        db.add(row)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[Task {task_id}] 写 llm_call_logs 失败: {e}")

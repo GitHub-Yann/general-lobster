@@ -607,7 +607,7 @@
                 const promptTemplates = ref([]);
                 const llmForm = ref({
                     name: '',
-                    provider: 'openai',
+                    provider: '',
                     api_base: '',
                     model: '',
                     api_key: '',
@@ -617,8 +617,8 @@
                     name: '',
                     scene: 'doc_refine',
                     version: 'v1',
-                    system_prompt: '你是文档分析助手。你只能基于给定内容重写，不得编造事实。输出严格JSON。',
-                    user_prompt_template: '请根据输入进行重写整合：\\n{payload}',
+                    system_prompt: '你是文档分析助手。你只能基于给定内容重写，不得编造事实。输出严格JSON：{"keywords":[{"word":"关键词","weight":0.00}],"summary":"摘要"}。关键词数量不超过15，摘要应是简介风格，语言简洁准确。',
+                    user_prompt_template: '请根据以下输入进行重写整合，保留关键术语并避免新增事实：\\n{payload}',
                     enabled: true
                 });
                 const submitLoading = ref(false);
@@ -701,7 +701,7 @@
                 const resetLlmForm = () => {
                     llmForm.value = {
                         name: '',
-                        provider: 'openai',
+                        provider: '',
                         api_base: '',
                         model: '',
                         api_key: '',
@@ -710,8 +710,14 @@
                 };
 
                 const createLlmConfig = async () => {
-                    if (!llmForm.value.name.trim() || !llmForm.value.api_key.trim()) {
-                        ElMessage.warning('请填写 LLM 配置名称和 API Key');
+                    if (
+                        !llmForm.value.name.trim() ||
+                        !llmForm.value.provider.trim() ||
+                        !llmForm.value.api_base.trim() ||
+                        !llmForm.value.model.trim() ||
+                        !llmForm.value.api_key.trim()
+                    ) {
+                        ElMessage.warning('LLM 配置所有字段均为必填');
                         return;
                     }
                     try {
@@ -720,8 +726,8 @@
                                 provider: llmForm.value.provider,
                                 name: llmForm.value.name.trim(),
                                 api_key: llmForm.value.api_key.trim(),
-                                api_base: llmForm.value.api_base.trim() || null,
-                                model: llmForm.value.model.trim() || null,
+                                api_base: llmForm.value.api_base.trim(),
+                                model: llmForm.value.model.trim(),
                                 enabled: llmForm.value.enabled
                             }
                         });
@@ -764,8 +770,8 @@
                         name: '',
                         scene: 'doc_refine',
                         version: 'v1',
-                        system_prompt: '你是文档分析助手。你只能基于给定内容重写，不得编造事实。输出严格JSON。',
-                        user_prompt_template: '请根据输入进行重写整合：\\n{payload}',
+                        system_prompt: '你是文档分析助手。你只能基于给定内容重写，不得编造事实。输出严格JSON：{"keywords":[{"word":"关键词","weight":0.00}],"summary":"摘要"}。关键词数量不超过15，摘要应是简介风格，语言简洁准确。',
+                        user_prompt_template: '请根据以下输入进行重写整合，保留关键术语并避免新增事实：\\n{payload}',
                         enabled: true
                     };
                 };
